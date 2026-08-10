@@ -4,6 +4,15 @@ This page describes the protocol and transport boundary covered by the
 current implementation. It is not a PostgreSQL server-version support
 matrix.
 
+## Wire protocol
+
+The core client supports PostgreSQL wire-protocol versions 3.0 and 3.2.
+`make-connection` defaults to 3.0; pass `:protocol-version` to select the
+other supported startup version. When a server sends
+`NegotiateProtocolVersion`, the connection records the negotiated version and
+uses it for subsequent protocol parsing. This describes the wire-protocol
+boundary, not support for every PostgreSQL server release or extension.
+
 ## Authentication
 
 The connection startup path supports these authentication mechanisms when the
