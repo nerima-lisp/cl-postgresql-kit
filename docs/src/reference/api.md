@@ -189,8 +189,8 @@ definition remains the authoritative list of exported symbols.
   Its result exposes the physical `replication-message`, parsed logical
   message, and typed logical event; keepalives have no logical event.
 - `decode-logical-replication-stream-message` performs the same composition
-  for an already parsed physical envelope, which is useful for adapters that
-  own their COPY BOTH read loop.
+  for an already parsed physical envelope, which is useful when the caller
+  owns the COPY BOTH read loop.
 - Use `register-logical-replication-relation`,
   `find-logical-replication-relation`, `forget-logical-replication-relation`,
   and `clear-logical-replication-relations` when relation metadata must be

@@ -253,6 +253,44 @@
            (is (connection-open connection)))
       (disconnect connection))))
 
+(defclass failing-tls-probe-transport (tls-probe-transport) ())
+
+(defmethod transport-start-tls ((transport failing-tls-probe-transport)
+                                &key hostname verify)
+  (declare (ignore transport hostname verify))
+  (error "TLS handshake failed."))
+
+(deftest sslmode-prefer-does-not-downgrade-tls-failure
+  (let* ((writes nil)
+         (transport
+           (make-instance
+            'failing-tls-probe-transport
+            :on-write
+            (lambda (transport octets)
+              (push (copy-seq octets) writes)
+              (if (equalp octets (encode-ssl-request))
+                  (memory-transport-append-input
+                   transport
+                   (octets (char-code #\S)))
+                  (append-ready-command transport "STARTUP")))))
+         (connection (make-connection :user "alice"
+                                      :host "127.0.0.1"
+                                      :transport transport
+                                      :ssl-mode :prefer)))
+    (transport-open transport)
+    (unwind-protect
+         (let ((condition
+                 (handler-case
+                     (connect connection)
+                   (error (condition)
+                     condition))))
+           (is (typep condition 'connection-error))
+           (is (= 1 (length writes)))
+           (is (equalp (first writes) (encode-ssl-request)))
+           (is (not (connection-open connection)))
+           (is (eq (connection-state connection) :failed)))
+      (disconnect connection))))
+
 (deftest sslmode-does-not-retry-unrelated-startup-error
   (let* ((writes nil)
          (startup-error

@@ -387,6 +387,7 @@
       (error 'parameter-error :parameter value :message message)))
 
 (defun %network-components (value separator protocol-p original)
+  (declare (ignore protocol-p original))
   (let ((components '())
         (start 0))
     (loop for index from 0 below (length value)

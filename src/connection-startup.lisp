@@ -13,12 +13,14 @@
                                        (connection-host connection))
                             :verify (not (null (member (connection-ssl-mode connection)
                                                        '(:verify-ca :verify-full)))))
-       (setf (connection-tls-established-p connection) t))
+       (setf (connection-tls-established-p connection) t)
+       :accepted)
       (#\N
        (setf (connection-tls-established-p connection) nil)
        (when (member (connection-ssl-mode connection)
                      '(:require :verify-ca :verify-full))
-         (error 'tls-error :message "The server refused SSL negotiation.")))
+         (error 'tls-error :message "The server refused SSL negotiation."))
+       :rejected)
       (otherwise
        (error 'protocol-error :message "Invalid SSL negotiation response.")))))
 
@@ -104,7 +106,7 @@
   (setf (connection-state connection) :connecting
         (connection-tls-established-p connection) nil)
   (let ((attempt-requests-ssl-p nil)
-        (ssl-negotiation-complete-p nil)
+        (ssl-server-rejected-p nil)
         (authentication-started-p nil)
         (last-transport-condition nil)
         (preferred-endpoint-index nil))
@@ -129,18 +131,19 @@
                      (connection-backend-secret-key connection) nil
                      (connection-open connection) nil
                      (connection-state connection) :connecting
-                     (connection-tls-established-p connection) nil))
-             (attempt (request-ssl-p)
+                     (connection-tls-established-p connection) nil
+                     ssl-server-rejected-p nil))
+            (attempt (request-ssl-p)
                (setf attempt-requests-ssl-p request-ssl-p
-                     ssl-negotiation-complete-p (not request-ssl-p)
+                     ssl-server-rejected-p nil
                      authentication-started-p nil
                      (connection-open connection) nil
                      (connection-state connection) :connecting
                      (connection-tls-established-p connection) nil)
                (transport-open (connection-transport connection))
                (when request-ssl-p
-                 (%ssl-request connection)
-                 (setf ssl-negotiation-complete-p t))
+                 (setf ssl-server-rejected-p
+                       (eq (%ssl-request connection) :rejected)))
                (transport-write-all (connection-transport connection)
                                     (encode-startup-message
                                      :protocol-version
@@ -184,7 +187,7 @@
                                 (%ssl-required-server-error-p condition))
                            (and (eq (connection-ssl-mode connection) :prefer)
                                 attempt-requests-ssl-p
-                                (not ssl-negotiation-complete-p)
+                                ssl-server-rejected-p
                                 (not authentication-started-p)))
                        (progn
                          (reset-for-retry)

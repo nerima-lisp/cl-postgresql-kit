@@ -78,7 +78,8 @@ The strict build catches broken internal links, missing navigation targets,
 and configuration warnings. For a direct local build outside the flake, use:
 
 ```text
-nix-shell -p 'python3.withPackages (ps: with ps; [ mkdocs mkdocs-material ])' \
+nix-shell --impure -p python3Packages.mkdocs python3Packages.mkdocs-material \
+  python3Packages.pymdown-extensions \
   --run 'mkdocs build --strict -f docs/mkdocs.yml'
 ```
 

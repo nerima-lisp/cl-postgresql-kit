@@ -228,7 +228,7 @@
    #:column-type-modifier
    #:column-format-code
    #:backend-message-kind
-   ;; Crypto helpers useful for auth adapters and tests
+   ;; Crypto helpers useful for authentication integrations and tests
    #:md5-digest
    #:sha256-digest
    #:hmac-sha256

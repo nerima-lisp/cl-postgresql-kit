@@ -107,7 +107,8 @@ For a direct local build outside the flake, use a Python environment containing
 both MkDocs and its Material theme:
 
 ```text
-nix-shell -p 'python3.withPackages (ps: with ps; [ mkdocs mkdocs-material ])' \
+nix-shell --impure -p python3Packages.mkdocs python3Packages.mkdocs-material \
+  python3Packages.pymdown-extensions \
   --run 'mkdocs build --strict -f docs/mkdocs.yml'
 ```
 

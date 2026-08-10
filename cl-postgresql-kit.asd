@@ -2,7 +2,7 @@
 
 (asdf:defsystem "cl-postgresql-kit"
   :description "A PostgreSQL wire-protocol client for Common Lisp."
-  :version "0.2.0"
+  :version "1.0.0"
   :license "MIT"
   :depends-on ((:version "cl-codec-kit" "0.5.0")
                (:version "cl-json-kit" "1.2.0")
@@ -46,6 +46,9 @@
                (:file "connection-startup")
                (:file "connection")
                (:file "query-parameters")
+               (:file "query-execution-frames")
+               (:file "query-execution-data")
+               (:file "query-execution-results")
                (:file "query-execution")
                (:file "cursor")
                (:file "query-timeout")

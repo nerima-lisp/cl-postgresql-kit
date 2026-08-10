@@ -46,15 +46,19 @@ The `:ssl-mode` connection option accepts the following values:
 
 TLS support is optional. Load `cl-postgresql-kit/tls` when `cl+ssl` is
 available; the core system remains usable with a non-TLS transport.
-The native adapter passes the per-stream `cl+ssl` options `:certificate`,
+The native socket transport passes the per-stream `cl+ssl` options `:certificate`,
 `:key`, `:password`, `:alpn-protocols`, `:cipher-list`, and `:method` from
 `:tls-options`. `:verify-location` additionally creates a connection-local
 `cl+ssl` context from a pathname, a CL+SSL default location keyword, or a list
 of pathnames. The libpq value `sslrootcert=system` maps to the CL+SSL default
 location and implies `:verify-full` when `sslmode` is omitted.
-The native adapter does not expose TLS channel-binding bytes, so applications
+The native socket transport does not expose TLS channel-binding bytes, so applications
 that require SCRAM-SHA-256-PLUS must provide a transport implementation that
 implements `transport-channel-binding-data`.
+
+`make-connection` defaults to `:disable` because TLS is an optional system
+dependency. Production deployments that require encryption should choose
+`:verify-full` (or `:verify-ca`) explicitly.
 
 ## Transports and platforms
 

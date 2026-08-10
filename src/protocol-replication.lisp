@@ -356,6 +356,7 @@ wire marker themselves."
       (values (%make-logical-replication-tuple :fields fields) position))))
 
 (defun %logical-replication-read-column (payload position context)
+  (declare (ignore context))
   (let ((flags (%octet-at payload position)))
     (incf position)
     (multiple-value-bind (name position) (%read-cstring payload position)

@@ -22,7 +22,7 @@
     };
 
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.5.0";
+      url = "github:nerima-lisp/paredit-cli/v1.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
@@ -70,13 +70,14 @@
     };
 
     cl-resilience-kit = {
-      url = "github:nerima-lisp/cl-resilience-kit/5ab13d325effbc713fd45c105ca730cd0cb0ef2e";
+      url = "github:nerima-lisp/cl-resilience-kit/242cf254841741a180bfebfb55fbb8bb23bade07";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-boundary-kit.follows = "cl-boundary-kit";
       inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
       inputs.cl-date-kit.follows = "cl-date-kit";
+      inputs.cl-observability-kit.follows = "cl-observability-kit";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
@@ -93,7 +94,7 @@
     };
 
     cl-observability-kit = {
-      url = "github:nerima-lisp/cl-observability-kit/c347c51dc2c79f7c79010330249492ececd7d9e6";
+      url = "github:nerima-lisp/cl-observability-kit/5d447256db014b8111b4441d1884bb5332447c9d";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";

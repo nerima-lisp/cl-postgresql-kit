@@ -63,6 +63,10 @@ The `:ssl-mode` option accepts `:disable`, `:allow`, `:prefer`, `:require`,
  :host (or (uiop:getenv "PGHOST") "127.0.0.1"))
 ```
 
+The core `make-connection` default is `:ssl-mode :disable` because TLS is an
+optional system dependency. For production connections that require encryption,
+select `:verify-full` (or `:verify-ca`) explicitly.
+
 `:require` requests TLS without certificate verification. `:verify-ca`
 verifies the certificate chain, and `:verify-full` also verifies the host
 name. Cleartext password authentication is accepted only after verified TLS
@@ -72,11 +76,11 @@ has been established.
 With `:prefer`, SCRAM-SHA-256-PLUS is selected when the TLS transport supplies
 channel-binding data; `:require` rejects authentication unless that data and
 the PLUS mechanism are available.
-The native `cl+ssl` adapter does not expose channel-binding bytes; use a custom
-transport implementing `transport-channel-binding-data` when SCRAM-PLUS is
-required.
+The native socket transport with `cl+ssl` integration does not expose
+channel-binding bytes; use a custom transport implementing
+`transport-channel-binding-data` when SCRAM-PLUS is required.
 
-Options accepted by the optional `cl+ssl` adapter can be supplied through
+Options accepted by the optional `cl+ssl` integration can be supplied through
 `:tls-options`:
 
 ```lisp

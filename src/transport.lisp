@@ -93,10 +93,10 @@
     (:method value)))
 
 (defun %normalize-tls-options (value)
-  "Validate and copy TLS options accepted by the native CL+SSL adapter.
+  "Validate and copy TLS options accepted by the native CL+SSL transport.
 
 Per-stream options are passed to CL+SSL's stream constructor.  VERIFY-LOCATION
-is used by the optional adapter to create a connection-local SSL context."
+is used by the optional TLS system to create a connection-local SSL context."
   (unless (%transport-proper-list-p value)
     (error 'parameter-error :parameter value
            :message "TLS options must be a property list."))

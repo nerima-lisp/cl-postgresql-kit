@@ -19,8 +19,10 @@ The core system is loaded serially in this order:
    files, the `auth-*` files, and `connection-startup` build and authenticate
    connections. The optional `cl-observability-kit` registry is attached here
    without changing the wire-protocol path when it is not configured.
-6. `connection`, `query-parameters`, `query-execution`, `cursor`, and
-   `query-timeout` implement session state and protocol operations.
+6. `connection`, `query-parameters`, `query-execution-frames`,
+   `query-execution-data`, `query-execution-results`, `query-execution`,
+   `cursor`, and `query-timeout` implement session state and protocol
+   operations.
 7. `operation` centralizes the shared timeout and failed-exchange retirement
    boundary; `query` and `query-pipeline` provide the synchronous request
    APIs and their asynchronous/CPS counterparts.
@@ -52,7 +54,7 @@ own codecs or wrappers.
 
 The data/logic split is deliberate: record definitions and constructors remain
 small and stable, while codecs and protocol operations can evolve independently
-without hiding state transitions inside adapters.
+without hiding state transitions inside transport or protocol integrations.
 
 ### Connection and operations
 
