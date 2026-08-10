@@ -1,0 +1,61 @@
+site_name: cl-postgresql-kit
+site_description: A Common Lisp PostgreSQL wire-protocol client with typed results, pooling, COPY, and replication support
+site_url: https://nerima-lisp.github.io/cl-postgresql-kit/
+repo_url: https://github.com/nerima-lisp/cl-postgresql-kit
+repo_name: nerima-lisp/cl-postgresql-kit
+edit_uri: edit/main/docs/src/
+
+site_dir: ../site
+docs_dir: src
+use_directory_urls: true
+strict: true
+
+plugins:
+  - search
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Core concepts: guide/core-concepts.md
+  - Reference:
+      - API: reference/api.md
+      - Conditions: reference/conditions.md
+      - Architecture: reference/architecture.md
+      - Compatibility: reference/compatibility.md
+  - Project:
+      - Development: project/development.md
+
+not_in_nav: |
+  notes/
