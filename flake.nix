@@ -94,7 +94,7 @@
     };
 
     cl-observability-kit = {
-      url = "github:nerima-lisp/cl-observability-kit/5d447256db014b8111b4441d1884bb5332447c9d";
+      url = "github:nerima-lisp/cl-observability-kit/v0.1.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
@@ -169,10 +169,12 @@
       ];
 
       devShellPackages = ctx: [
+        cl-weave.packages.${ctx.system}.default
         paredit-cli.packages.${ctx.system}.default
       ];
 
       extraOutputs = ctx: {
+        packages.paredit-cli = paredit-cli.packages.${ctx.system}.default;
         packages.coverage = ctx.cl.mkCoverageReport {
           drv = ctx.package;
           entryPointText = coverage-entry-point-text;

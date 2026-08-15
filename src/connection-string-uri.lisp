@@ -41,43 +41,6 @@
         (%connection-string-parameter-error parameter "URI component contains NUL."))
       decoded)))
 
-(defun %parse-connection-port (value &optional (parameter "port"))
-  (let ((port (handler-case (parse-integer value :junk-allowed nil)
-                (error () nil))))
-    (unless (and (integerp port) (<= 1 port 65535))
-      (%connection-string-parameter-error
-       parameter "Port must be an integer between 1 and 65535."))
-    port))
-
-(defun %parse-connection-comma-list (value parameter &optional parser)
-  (let ((length (length value))
-        (start 0)
-        (items nil))
-    (when (zerop length)
-      (%connection-string-parameter-error
-       parameter "Comma-separated connection values cannot be empty."))
-    (loop
-      for separator = (position #\, value :start start)
-      for end = (or separator length)
-      do (when (= start end)
-           (%connection-string-parameter-error
-            parameter "Comma-separated connection values cannot contain empty entries."))
-         (push (if parser
-                   (funcall parser (subseq value start end) parameter)
-                   (subseq value start end))
-               items)
-         (if separator
-             (setf start (1+ separator))
-             (return (nreverse items))))))
-
-(defun %parse-connection-host-list (value parameter)
-  (mapcar (lambda (host)
-            (when (find #\Null host)
-              (%connection-string-parameter-error
-               parameter "Host values must not contain NUL."))
-            host)
-          (%parse-connection-comma-list value parameter)))
-
 (defun %parse-connection-uri-hostport-list (hostport)
   (let ((length (length hostport))
         (start 0)
@@ -140,20 +103,101 @@
              (setf start (1+ separator))
              (return (values (nreverse hosts) (nreverse ports)))))))
 
-(defun %parse-connection-nonnegative-integer (value parameter)
-  (let ((number (handler-case (parse-integer value :junk-allowed nil)
-                  (error () nil))))
-    (unless (and (integerp number) (<= 0 number))
-      (%connection-string-parameter-error
-       parameter "Value must be a non-negative integer."))
-    number))
-
 (defun %connection-uri-scheme-end (string)
   (loop for scheme in '("postgresql://" "postgres://")
         for scheme-length = (length scheme)
         when (and (>= (length string) scheme-length)
                   (string-equal scheme string :end2 scheme-length))
           do (return scheme-length)))
+
+(defun %parse-connection-uri-userinfo (authority)
+  (let ((at-position (position #\@ authority :from-end t)))
+    (values
+     (when at-position
+       (let ((colon-position (position #\: authority :end at-position)))
+         (if colon-position
+             (list (cons "user"
+                         (%percent-decode-connection-component
+                          authority :start 0 :end colon-position :parameter "user"))
+                   (cons "password"
+                         (%percent-decode-connection-component
+                          authority :start (1+ colon-position) :end at-position
+                          :parameter "password")))
+             (list (cons "user"
+                         (%percent-decode-connection-component
+                          authority :start 0 :end at-position :parameter "user"))))))
+     (if at-position
+         (subseq authority (1+ at-position))
+         authority))))
+
+(defun %connection-uri-host-parameter-value (hosts)
+  (if (= (length hosts) 1)
+      (first hosts)
+      (progn
+        (when (some #'null hosts)
+          (%connection-string-parameter-error
+           "host" "Every host in a URI host list must be non-empty."))
+        (format nil "~{~A~^,~}" hosts))))
+
+(defun %connection-uri-port-parameter-value (ports)
+  (if (= (length ports) 1)
+      (first ports)
+      (format nil "~{~A~^,~}"
+              (mapcar (lambda (port) (or port "5432")) ports))))
+
+(defun %parse-connection-uri-authority-parameters (authority)
+  (multiple-value-bind (userinfo-parameters hostport)
+      (%parse-connection-uri-userinfo authority)
+    (let ((parameters (copy-list userinfo-parameters)))
+      (unless (zerop (length hostport))
+        (multiple-value-bind (hosts ports)
+            (%parse-connection-uri-hostport-list hostport)
+          (let ((host-parameter
+                  (%connection-uri-host-parameter-value hosts)))
+            (when host-parameter
+              (push (cons "host" host-parameter) parameters)))
+          (when (some #'identity ports)
+            (push (cons "port"
+                        (%connection-uri-port-parameter-value ports))
+                  parameters))))
+      (nreverse parameters))))
+
+(defun %parse-connection-uri-path-parameters (uri path-position query-position length)
+  (when path-position
+    (let ((path-end (or query-position length)))
+      (list (cons "dbname"
+                  (%percent-decode-connection-component
+                   uri :start (1+ path-position) :end path-end
+                   :parameter "dbname"))))))
+
+(defun %parse-connection-uri-query-parameters (uri query-position length)
+  (when query-position
+    (loop with parameters = nil
+          with pair-start = (1+ query-position)
+          for separator = (position #\& uri :start pair-start)
+          for pair-end = (or separator length)
+          do (unless (= pair-start pair-end)
+               (let ((equals-position
+                       (position #\= uri :start pair-start :end pair-end)))
+                 (unless equals-position
+                   (%connection-string-parameter-error
+                    "query" "Each URI query parameter must contain '='."))
+                 (when (= equals-position pair-start)
+                   (%connection-string-parameter-error
+                    "query" "URI query parameter name cannot be empty."))
+                 (setf parameters
+                       (%connection-string-set-parameter
+                        parameters
+                        (string-downcase
+                         (%percent-decode-connection-component
+                          uri :start pair-start :end equals-position
+                          :parameter "query"))
+                        (%percent-decode-connection-component
+                         uri :start (1+ equals-position) :end pair-end
+                         :parameter "query")))))
+          when (null separator)
+            do (return (nreverse parameters))
+          do (setf pair-start (1+ separator)))))
 
 (defun %parse-connection-uri-parameters (uri)
   (let* ((scheme-end (%connection-uri-scheme-end uri))
@@ -172,228 +216,12 @@
                                 (query-position query-position)
                                 (path-position path-position)
                                 (t length)))
-           (parameters nil)
            (authority (subseq uri scheme-end authority-end)))
-      (let* ((at-position (position #\@ authority :from-end t))
-             (hostport (if at-position
-                           (subseq authority (1+ at-position))
-                           authority)))
-        (when at-position
-          (let ((colon-position (position #\: authority :end at-position)))
-            (if colon-position
-                (progn
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "user"
-                         (%percent-decode-connection-component
-                          authority :start 0 :end colon-position :parameter "user")))
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "password"
-                         (%percent-decode-connection-component
-                          authority :start (1+ colon-position) :end at-position
-                          :parameter "password"))))
-                (setf parameters
-                      (%connection-string-set-parameter
-                       parameters "user"
-                       (%percent-decode-connection-component
-                        authority :start 0 :end at-position :parameter "user"))))))
-        (unless (zerop (length hostport))
-          (multiple-value-bind (hosts ports)
-              (%parse-connection-uri-hostport-list hostport)
-            (if (= (length hosts) 1)
-                (when (first hosts)
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "host" (first hosts))))
-                (progn
-                  (when (some #'null hosts)
-                    (%connection-string-parameter-error
-                     "host" "Every host in a URI host list must be non-empty."))
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "host" (format nil "~{~A~^,~}" hosts)))))
-            (when (some #'identity ports)
-              (if (= (length ports) 1)
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "port" (first ports)))
-                  (setf parameters
-                        (%connection-string-set-parameter
-                         parameters "port"
-                         (format nil "~{~A~^,~}"
-                                 (mapcar (lambda (port) (or port "5432"))
-                                         ports))))))))
-      (when path-position
-        (let ((path-end (or query-position length)))
-          (setf parameters
-                (%connection-string-set-parameter
-                 parameters "dbname"
-                 (%percent-decode-connection-component
-                  uri :start (1+ path-position) :end path-end :parameter "dbname")))))
-      (when query-position
-        (let ((query-start (1+ query-position)))
-          (loop with pair-start = query-start
-                for separator = (position #\& uri :start pair-start)
-                for pair-end = (or separator length)
-                do (unless (= pair-start pair-end)
-                     (let ((equals-position
-                             (position #\= uri :start pair-start :end pair-end)))
-                       (unless equals-position
-                         (%connection-string-parameter-error
-                          "query" "Each URI query parameter must contain '='."))
-                       (when (= equals-position pair-start)
-                         (%connection-string-parameter-error
-                          "query" "URI query parameter name cannot be empty."))
-                       (let ((name (%percent-decode-connection-component
-                                    uri :start pair-start :end equals-position
-                                    :parameter "query"))
-                             (value (%percent-decode-connection-component
-                                     uri :start (1+ equals-position) :end pair-end
-                                     :parameter "query")))
-                         (setf parameters
-                               (%connection-string-set-parameter
-                                parameters (string-downcase name) value)))))
-                when (null separator)
-                  do (return)
-                do (setf pair-start (1+ separator)))))
-      parameters))))
-
-(defun %connection-options-from-parameters (parameters)
-  (dolist (parameter parameters)
-    (unless (member (car parameter)
-                    *connection-string-supported-parameters*
-                    :test #'string=)
-      (%connection-string-unsupported (car parameter))))
-  (let ((options nil)
-        (startup-parameters nil))
-    (labels ((add-option (name value)
-             (setf options (append options (list name value))))
-           (add-tls-option (name value)
-             (let ((entry (member :tls-options options :test #'eq)))
-               (if entry
-                   (setf (cadr entry)
-                         (append (cadr entry) (list name value)))
-                   (add-option :tls-options (list name value)))))
-           (parameter (name)
-             (assoc name parameters :test #'string=)))
-      (let ((host (parameter "host"))
-            (hostaddr (parameter "hostaddr")))
-        (when (and host (plusp (length (cdr host))))
-          (let ((hosts (%parse-connection-host-list (cdr host) "host")))
-            (if (= (length hosts) 1)
-                (add-option :host (first hosts))
-                (add-option :hosts hosts))))
-        (when (and hostaddr (plusp (length (cdr hostaddr))))
-          (let ((hostaddrs
-                  (%parse-connection-host-list (cdr hostaddr) "hostaddr")))
-            (if (= (length hostaddrs) 1)
-                (add-option :hostaddr (first hostaddrs))
-                (add-option :hostaddrs hostaddrs))
-            (unless host
-              (if (= (length hostaddrs) 1)
-                  (add-option :host (first hostaddrs))
-                  (add-option :hosts (copy-list hostaddrs)))))))
-      (let ((port (parameter "port")))
-        (when port
-          (let ((ports (%parse-connection-comma-list
-                        (cdr port) "port" #'%parse-connection-port)))
-            (if (= (length ports) 1)
-                (add-option :port (first ports))
-                (add-option :ports ports)))))
-      (dolist (mapping '(("user" . :user)
-                         ("password" . :password)
-                         ("database" . :database)))
-        (let ((entry (parameter (car mapping))))
-          (when entry
-            (add-option (cdr mapping) (cdr entry)))))
-      (let ((dbname (parameter "dbname")))
-        (when dbname
-          (add-option :database (cdr dbname))))
-      (let ((application-name (parameter "application_name")))
-        (if application-name
-            (add-option :application-name (cdr application-name))
-            (let ((fallback (parameter "fallback_application_name")))
-              (when fallback
-                (add-option :application-name (cdr fallback))))))
-      (let* ((ssl-mode (parameter "sslmode"))
-             (ssl-root-cert (parameter "sslrootcert"))
-             (ssl-mode-value
-               (when ssl-mode
-                 (cond ((string-equal (cdr ssl-mode) "disable") :disable)
-                       ((string-equal (cdr ssl-mode) "allow") :allow)
-                       ((string-equal (cdr ssl-mode) "prefer") :prefer)
-                       ((string-equal (cdr ssl-mode) "require") :require)
-                       ((string-equal (cdr ssl-mode) "verify-ca") :verify-ca)
-                       ((string-equal (cdr ssl-mode) "verify-full") :verify-full)
-                       (t
-                        (%connection-string-parameter-error
-                         "sslmode" "Unknown sslmode value ~A." (cdr ssl-mode)))))))
-        (when (and ssl-root-cert
-                   (string-equal (cdr ssl-root-cert) "system"))
-          (when (and ssl-mode (not (eq ssl-mode-value :verify-full)))
-            (%connection-string-parameter-error
-             "sslrootcert"
-             "sslrootcert=system requires sslmode=verify-full."))
-          (unless ssl-mode
-            (setf ssl-mode-value :verify-full)))
-        (when ssl-mode-value
-          (add-option :ssl-mode ssl-mode-value)))
-      (dolist (mapping '( ("sslcert" . :certificate)
-                         ("sslkey" . :key)
-                         ("sslpassword" . :password)
-                         ("sslrootcert" . :verify-location)))
-        (let ((entry (parameter (car mapping))))
-          (when entry
-            (add-tls-option
-             (cdr mapping)
-             (if (and (string= (car mapping) "sslrootcert")
-                      (string-equal (cdr entry) "system"))
-                 :default
-                 (cdr entry))))))
-      (let ((channel-binding (parameter "channel_binding")))
-        (when channel-binding
-          (add-option :channel-binding
-                      (%normalize-channel-binding (cdr channel-binding)))))
-      (let ((connect-timeout (parameter "connect_timeout")))
-        (when connect-timeout
-          (add-option :connect-timeout
-                      (%parse-connection-nonnegative-integer
-                       (cdr connect-timeout) "connect_timeout"))))
-      (let ((target-session-attrs (parameter "target_session_attrs")))
-        (when target-session-attrs
-          (add-option :target-session-attrs
-                      (%normalize-target-session-attrs
-                       (cdr target-session-attrs)))))
-      (let ((load-balance-hosts (parameter "load_balance_hosts")))
-        (when load-balance-hosts
-          (add-option :load-balance-hosts
-                      (%normalize-load-balance-hosts
-                       (cdr load-balance-hosts)))))
-      (dolist (name '("client_encoding" "options" "replication"))
-        (let ((entry (parameter name)))
-          (when entry
-            (push (cons name (cdr entry)) startup-parameters))))
-      (when startup-parameters
-        (add-option :startup-parameters (nreverse startup-parameters)))
-      options)))
-
-(defun %merge-connection-option-plists (base overrides)
-  (unless (evenp (length overrides))
-    (%connection-string-parameter-error
-     nil "Connection option overrides must be a property list."))
-  (let ((merged (copy-list base)))
-    (loop for tail on overrides by #'cddr
-          for name = (car tail)
-          for value = (cadr tail)
-          do (unless (keywordp name)
-               (%connection-string-parameter-error
-                name "Connection option override names must be keywords."))
-             (let ((entry (member name merged :test #'eq)))
-               (if entry
-                   (setf (cadr entry) value)
-                   (setf merged (append merged (list name value))))))
-    merged))
+      (append (%parse-connection-uri-authority-parameters authority)
+              (%parse-connection-uri-path-parameters
+               uri path-position query-position length)
+              (%parse-connection-uri-query-parameters
+               uri query-position length)))))
 
 (defun parse-connection-uri (uri)
   "Parse a PostgreSQL URI into keyword options accepted by MAKE-CONNECTION.

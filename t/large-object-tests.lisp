@@ -31,18 +31,38 @@
            (is (typep (query connection "BEGIN") 'query-result))
            (let* ((oid (large-object-create connection))
                   (object (large-object-open connection oid
-                                              :mode :read-write)))
+                                             :mode :read-write)))
              (is (= 42 oid))
              (is (= 7 (large-object-descriptor object)))
-             (is (equalp #() (large-object-read object 0)))
-             (is (equalp (octets 1 2 3) (large-object-read object 3)))
-             (is (= 3 (large-object-write object (octets 4 5 6))))
-             (is (= 3 (large-object-seek object 3)))
-             (is (= 3 (large-object-tell object)))
-             (is (large-object-truncate object 0))
-             (is (large-object-close object))
-             (is (large-object-closed-p object))
-             (is (large-object-close object))
+             (is-case-each
+                 ((case-name thunk)
+                  (list (list 'read-empty
+                              (lambda ()
+                                (equalp #() (large-object-read object 0))))
+                        (list 'read-filled
+                              (lambda ()
+                                (equalp (octets 1 2 3)
+                                        (large-object-read object 3))))
+                        (list 'write
+                              (lambda ()
+                                (= 3 (large-object-write object
+                                                         (octets 4 5 6)))))
+                        (list 'seek
+                              (lambda ()
+                                (= 3 (large-object-seek object 3))))
+                        (list 'tell
+                              (lambda () (= 3 (large-object-tell object))))
+                        (list 'truncate
+                              (lambda ()
+                                (large-object-truncate object 0)))
+                        (list 'close
+                              (lambda () (large-object-close object)))
+                        (list 'closed-p
+                              (lambda () (large-object-closed-p object)))
+                        (list 'close-idempotent
+                              (lambda () (large-object-close object)))))
+               (declare (ignore case-name))
+               (is (funcall thunk)))
              (assert-signals 'transaction-error
                              (lambda () (large-object-tell object))))
            (is (large-object-unlink connection 42)))
@@ -73,29 +93,56 @@
            (assert-signals 'transaction-error
                            (lambda () (large-object-read-all connection 42)))
            (is (typep (query connection "BEGIN") 'query-result))
-           (is (equalp (octets 9 8 7)
-                       (large-object-read-all connection 42)))
-           (is (equalp (octets 8 7)
-                       (large-object-read-range connection 42 1 2)))
-           (is (= 55
-                  (large-object-from-bytea connection (octets 1 2 3))))
-           (is (large-object-write-at connection 55 2 (octets 4 5 6)))
-           (is (= 56
-                  (large-object-import-server-file connection
-                                                     "/server/input.bin")))
-           (is (= 57
-                  (large-object-import-server-file connection
-                                                     "/server/input.bin"
-                                                     :oid 57)))
-           (is (large-object-export-server-file connection
-                                                 57
-                                                 "/server/output.bin"))
-           (assert-signals 'parameter-error
-                           (lambda ()
-                             (large-object-read-range connection 42 -1 1)))
-           (assert-signals 'parameter-error
-                           (lambda ()
-                             (large-object-import-server-file
-                              connection
-                              (format nil "server~Cpath" (code-char 0))))))
+           (is-case-each
+               ((case-name thunk)
+                (list (list 'read-all
+                            (lambda ()
+                              (equalp (octets 9 8 7)
+                                      (large-object-read-all connection 42))))
+                      (list 'read-range
+                            (lambda ()
+                              (equalp (octets 8 7)
+                                      (large-object-read-range connection
+                                                               42 1 2))))
+                      (list 'from-bytea
+                            (lambda ()
+                              (= 55
+                                 (large-object-from-bytea connection
+                                                          (octets 1 2 3)))))
+                      (list 'write-at
+                            (lambda ()
+                              (large-object-write-at connection
+                                                     55 2 (octets 4 5 6))))
+                      (list 'import-default
+                            (lambda ()
+                              (= 56
+                                 (large-object-import-server-file
+                                  connection
+                                  "/server/input.bin"))))
+                      (list 'import-explicit-oid
+                            (lambda ()
+                              (= 57
+                                 (large-object-import-server-file
+                                  connection
+                                  "/server/input.bin"
+                                  :oid 57))))
+                      (list 'export
+                            (lambda ()
+                              (large-object-export-server-file connection
+                                                               57
+                                                               "/server/output.bin")))))
+             (declare (ignore case-name))
+             (is (funcall thunk)))
+           (it-signals-each 'parameter-error
+               ((:negative-read-start)
+                (:server-path-contains-nul))
+             "large object helper rejects invalid input case ~A"
+             (label)
+             (ecase label
+               (:negative-read-start
+                (large-object-read-range connection 42 -1 1))
+               (:server-path-contains-nul
+                (large-object-import-server-file
+                 connection
+                 (format nil "server~Cpath" (code-char 0)))))))
       (disconnect connection))))

@@ -62,75 +62,30 @@
 (defun %encode-uuid-binary (value)
   (%uuid-octets value))
 
-(defun %decode-bytea-legacy (string)
-  (let ((result (make-array 0 :element-type '(unsigned-byte 8)
-                            :adjustable t :fill-pointer 0))
-        (position 0))
-    (labels ((append-character (character)
-               (loop for octet across
-                         (cl-codec-kit:string-to-octets (string character)
-                                                         :encoding :utf-8)
-                     do (vector-push-extend octet result))))
-      (loop while (< position (length string))
-            do (if (char/= (char string position) #\\)
-                   (progn
-                     (append-character (char string position))
-                     (incf position))
-                   (progn
-                     (incf position)
-                     (when (>= position (length string))
-                       (error 'protocol-error
-                              :message "Invalid PostgreSQL bytea escape"
-                              :context :type-decoder))
-                     (if (char= (char string position) #\\)
-                         (progn
-                           (vector-push-extend 92 result)
-                           (incf position))
-                         (let ((start position)
-                               (end position))
-                           (loop while (and (< end (length string))
-                                            (< (- end start) 3)
-                                            (digit-char-p (char string end) 8))
-                                 do (incf end))
-                           (when (= start end)
-                             (error 'protocol-error
-                                    :message "Invalid PostgreSQL bytea escape"
-                                    :context :type-decoder))
-                           (let ((value 0))
-                             (loop for index from start below end
-                                   do (setf value (+ (* value 8)
-                                                     (digit-char-p
-                                                      (char string index) 8))))
-                             (when (> value 255)
-                               (error 'protocol-error
-                                      :message "PostgreSQL bytea escape is out of range"
-                                      :context :type-decoder))
-                             (vector-push-extend value result))
-                           (setf position end)))))))
-    result))
-
 (defun %decode-bytea-text (octets)
   (let ((string (%decode-utf8 octets)))
-    (if (and (>= (length string) 2) (string= "\\x" string :end2 2))
-        (let* ((hex (subseq string 2))
-               (hex-length (length hex)))
-          (unless (evenp hex-length)
-            (error 'protocol-error
-                   :message "The PostgreSQL bytea hex payload has odd length."
-                   :context :type-decoder))
-          (let ((result (make-array (/ hex-length 2)
-                                    :element-type '(unsigned-byte 8))))
-            (loop for index from 0 below hex-length by 2
-                  for output from 0
-                  for high = (digit-char-p (char hex index) 16)
-                  for low = (digit-char-p (char hex (1+ index)) 16)
-                  do (unless (and high low)
-                       (error 'protocol-error
-                              :message "The PostgreSQL bytea hex payload contains a non-hex digit."
-                              :context :type-decoder))
-                     (setf (aref result output) (+ (* 16 high) low)))
-            result))
-        (%decode-bytea-legacy string))))
+    (unless (and (>= (length string) 2) (string= "\\x" string :end2 2))
+      (error 'protocol-error
+             :message "PostgreSQL bytea text payload must use hex format."
+             :context :type-decoder))
+    (let* ((hex (subseq string 2))
+           (hex-length (length hex)))
+      (unless (evenp hex-length)
+        (error 'protocol-error
+               :message "The PostgreSQL bytea hex payload has odd length."
+               :context :type-decoder))
+      (let ((result (make-array (/ hex-length 2)
+                                :element-type '(unsigned-byte 8))))
+        (loop for index from 0 below hex-length by 2
+              for output from 0
+              for high = (digit-char-p (char hex index) 16)
+              for low = (digit-char-p (char hex (1+ index)) 16)
+              do (unless (and high low)
+                   (error 'protocol-error
+                          :message "The PostgreSQL bytea hex payload contains a non-hex digit."
+                          :context :type-decoder))
+                 (setf (aref result output) (+ (* 16 high) low)))
+        result))))
 
 (defun %encode-bytea-text (value)
   (let ((octets (if (typep value 'bytea-value)

@@ -1,5 +1,23 @@
 (in-package #:cl-postgresql-kit)
 
+(defun %parse-composite-text (string)
+  (let ((string (%type-trim string)))
+    (when (or (< (length string) 2)
+              (not (char= (char string 0) #\())
+              (not (char= (char string (1- (length string))) #\))))
+      (error 'protocol-error :message "PostgreSQL composite text has invalid delimiters"
+             :context :type-decoder))
+    (let ((body (subseq string 1 (1- (length string)))))
+      (if (string= body "")
+          #()
+          (coerce
+           (loop for token in (%split-type-delimited body #\, :type-decoder)
+                 collect (multiple-value-bind (value quoted-p)
+                             (%unquote-type-token token :null-as-sql-null t)
+                           (declare (ignore quoted-p))
+                           value))
+           'vector)))))
+
 (defun %composite-fields-for-encoding (value field-oids)
   (let* ((composite (and (postgres-composite-p value) value))
          (fields (if composite
@@ -15,7 +33,7 @@
                :message "PostgreSQL composite field count does not match its type definition"))
       (when composite
         (let ((provided-oids (postgres-composite-field-oids composite)))
-          (when (plusp (length provided-oids))
+          (when (consp provided-oids)
             (unless (and (= (length provided-oids) (length field-oids))
                          (loop for index below (length field-oids)
                                always (= (aref provided-oids index)

@@ -1,155 +1,5 @@
 (in-package #:cl-postgresql-kit)
 
-(defun %proper-list-p (value)
-  (and (listp value)
-       (let ((seen (make-hash-table :test #'eq))
-             (tail value))
-         (loop
-           (cond ((null tail)
-                  (return t))
-                 ((not (consp tail))
-                  (return nil))
-                 ((gethash tail seen)
-                  (return nil))
-                 (t
-                  (setf (gethash tail seen) t
-                        tail (cdr tail))))))))
-
-(defun %connection-endpoint-string-list (value parameter)
-  (unless (%proper-list-p value)
-    (error 'parameter-error
-           :parameter parameter
-           :message "Connection endpoint lists must be proper lists."))
-  (mapcar (lambda (item)
-            (unless (and (stringp item)
-                         (plusp (length item))
-                         (not (find #\Null item)))
-              (error 'parameter-error
-                     :parameter item
-                     :message (format nil
-                                      "Each ~A entry must be a non-empty NUL-free string."
-                                      parameter)))
-            item)
-          value))
-
-(defun %connection-endpoint-port-list (value)
-  (unless (%proper-list-p value)
-    (error 'parameter-error
-           :parameter value
-           :message "PORTS must be a proper list."))
-  (mapcar (lambda (item)
-            (unless (and (integerp item) (<= 1 item 65535))
-              (error 'parameter-error
-                     :parameter item
-                     :message "Each PORTS entry must be between 1 and 65535."))
-            item)
-          value))
-
-(defun %normalize-target-session-attrs (value)
-  (let ((normalized
-          (cond ((null value) :any)
-                ((keywordp value) value)
-                ((stringp value)
-                 (cond ((string-equal value "any") :any)
-                       ((string-equal value "read-write") :read-write)
-                       ((string-equal value "read-only") :read-only)
-                       ((string-equal value "primary") :primary)
-                       ((string-equal value "standby") :standby)
-                       ((string-equal value "prefer-standby") :prefer-standby)
-                       (t nil)))
-                (t nil))))
-    (unless (member normalized
-                    '(:any :read-write :read-only :primary :standby :prefer-standby)
-                    :test #'eq)
-      (error 'parameter-error
-             :parameter value
-             :message "TARGET-SESSION-ATTRS must be ANY, READ-WRITE, READ-ONLY, PRIMARY, STANDBY, or PREFER-STANDBY."))
-    normalized))
-
-(defun %normalize-load-balance-hosts (value)
-  (let ((normalized
-          (cond ((null value) :disable)
-                ((keywordp value) value)
-                ((stringp value)
-                 (cond ((string-equal value "disable") :disable)
-                       ((string-equal value "random") :random)
-                       (t nil)))
-                (t nil))))
-    (unless (member normalized '(:disable :random) :test #'eq)
-      (error 'parameter-error
-             :parameter value
-             :message "LOAD-BALANCE-HOSTS must be DISABLE or RANDOM."))
-    normalized))
-
-(defun %normalize-channel-binding (value)
-  (let ((normalized
-          (cond ((null value) :prefer)
-                ((keywordp value) value)
-                ((stringp value)
-                 (cond ((string-equal value "disable") :disable)
-                       ((string-equal value "prefer") :prefer)
-                       ((string-equal value "require") :require)
-                       (t nil)))
-                (t nil))))
-    (unless (member normalized '(:disable :prefer :require) :test #'eq)
-      (error 'parameter-error
-             :parameter value
-             :message "CHANNEL-BINDING must be DISABLE, PREFER, or REQUIRE."))
-    normalized))
-
-(defun %make-connection-endpoints (&key host hosts hostaddr hostaddrs port ports
-                                         host-supplied-p)
-  (when (and hostaddr hostaddrs)
-    (error 'parameter-error
-           :parameter :hostaddr
-           :message "HOSTADDR and HOSTADDRS are mutually exclusive."))
-  (when (and ports (not (%proper-list-p ports)))
-    (error 'parameter-error
-           :parameter ports
-           :message "PORTS must be a proper list."))
-  (let* ((physical-hosts (cond (hostaddrs
-                                (%connection-endpoint-string-list
-                                 hostaddrs :hostaddrs))
-                               (hostaddr
-                                (%connection-endpoint-string-list
-                                 (list hostaddr) :hostaddr))
-                               (t nil)))
-         (logical-hosts (cond (hosts
-                               (%connection-endpoint-string-list hosts :hosts))
-                              ((and physical-hosts (not host-supplied-p))
-                               (copy-list physical-hosts))
-                              (t
-                               (%connection-endpoint-string-list
-                                (list host) :host))))
-         (endpoint-ports (if ports
-                             (%connection-endpoint-port-list ports)
-                             (list port)))
-         (count (length logical-hosts)))
-    (unless (plusp count)
-      (error 'parameter-error
-             :parameter :hosts
-             :message "At least one PostgreSQL endpoint is required."))
-    (when (and physical-hosts (/= (length physical-hosts) count))
-      (error 'parameter-error
-             :parameter (if hostaddrs :hostaddrs :hostaddr)
-             :message "HOSTADDRS must have one address for each HOST candidate."))
-    (unless (or (= (length endpoint-ports) 1)
-                (= (length endpoint-ports) count))
-      (error 'parameter-error
-             :parameter :ports
-             :message "PORTS must contain one port for each HOST candidate, or one port for all candidates."))
-    (loop for index below count
-          for logical-host = (nth index logical-hosts)
-          for physical-host = (if physical-hosts
-                                 (nth index physical-hosts)
-                                 logical-host)
-          for endpoint-port = (if (= (length endpoint-ports) 1)
-                                  (first endpoint-ports)
-                                  (nth index endpoint-ports))
-          collect (list :host logical-host
-                        :hostaddr physical-host
-                        :port endpoint-port))))
-
 (defun %make-connection-transport (connection endpoint index)
   (let ((transport
           (cond ((and (zerop index)
@@ -194,42 +44,6 @@
   "Return the backend secret key advertised during startup."
   (connection-backend-secret-key connection))
 
-(defun %normalize-startup-parameters (parameters)
-  (unless (%proper-list-p parameters)
-    (error 'parameter-error
-           :parameter parameters
-           :message "Startup parameters must be a proper list of (name . value) pairs."))
-  (let ((seen (make-hash-table :test #'equal))
-        (normalized nil))
-    (dolist (pair parameters (nreverse normalized))
-      (unless (and (consp pair)
-                   (stringp (car pair))
-                   (stringp (cdr pair)))
-        (error 'parameter-error
-               :parameter pair
-               :message "Startup parameters must be (string-name . string-value) pairs."))
-      (let ((name (car pair))
-            (value (cdr pair)))
-        (when (or (zerop (length name))
-                  (find #\Null name)
-                  (find #\Null value))
-          (error 'parameter-error
-                 :parameter pair
-                 :message "Startup parameter names and values must be non-empty and NUL-free."))
-        (when (or (string-equal name "user")
-                  (string-equal name "database")
-                  (string-equal name "application_name"))
-          (error 'parameter-error
-                 :parameter pair
-                 :message "Startup parameters must not override mandatory connection parameters."))
-        (let ((key (string-downcase name)))
-          (when (gethash key seen)
-            (error 'parameter-error
-                   :parameter pair
-                   :message "Startup parameter names must be unique."))
-          (setf (gethash key seen) t))
-        (push (cons name value) normalized)))))
-
 (defun make-connection (&key (host "127.0.0.1" host-supplied-p) hosts hostaddr hostaddrs
                               (port 5432) ports user password
                               oauth-token-provider
@@ -247,7 +61,7 @@
                               cancel-transport-factory)
   "Create a PostgreSQL connection object.  The network is opened by CONNECT.
 
-HOSTS, HOSTADDRS, and PORTS provide libpq-compatible candidate lists.  A
+HOSTS, HOSTADDRS, and PORTS provide candidate endpoint lists.  A
 TRANSPORT-FACTORY receives the connection and an endpoint property list and
 must return a fresh or reusable TRANSPORT for that candidate.  When
 LOAD-BALANCE-HOSTS is RANDOM, the candidate order is shuffled for each

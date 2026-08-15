@@ -8,117 +8,176 @@
     "target_session_attrs"
     "load_balance_hosts" "user"))
 
-(defun %connection-string-whitespace-p (character)
-  (member character '(#\Space #\Tab #\Newline #\Return #\Page) :test #'char=))
+(defun %proper-list-p (value)
+  (and (listp value)
+       (let ((seen (make-hash-table :test #'eq))
+             (tail value))
+         (loop
+           (cond ((null tail)
+                  (return t))
+                 ((not (consp tail))
+                  (return nil))
+                 ((gethash tail seen)
+                  (return nil))
+                 (t
+                  (setf (gethash tail seen) t
+                        tail (cdr tail))))))))
 
-(defun %connection-string-contains-nul-p (string)
-  (find (code-char 0) string :test #'char=))
+(defun %connection-endpoint-string-list (value parameter)
+  (unless (%proper-list-p value)
+    (error 'parameter-error
+           :parameter parameter
+           :message "Connection endpoint lists must be proper lists."))
+  (mapcar (lambda (item)
+            (unless (and (stringp item)
+                         (plusp (length item))
+                         (not (find #\Null item)))
+              (error 'parameter-error
+                     :parameter item
+                     :message (format nil
+                                      "Each ~A entry must be a non-empty NUL-free string."
+                                      parameter)))
+            item)
+          value))
 
-(defun %connection-string-parameter-error (parameter format-control &rest arguments)
-  (error 'parameter-error
-         :parameter parameter
-         :message (apply #'format nil format-control arguments)))
+(defun %connection-endpoint-port-list (value)
+  (unless (%proper-list-p value)
+    (error 'parameter-error
+           :parameter value
+           :message "PORTS must be a proper list."))
+  (mapcar (lambda (item)
+            (unless (and (integerp item) (<= 1 item 65535))
+              (error 'parameter-error
+                     :parameter item
+                     :message "Each PORTS entry must be between 1 and 65535."))
+            item)
+          value))
 
-(defun %connection-string-unsupported (parameter)
-  (error 'unsupported-feature
-         :feature parameter
-         :message (format nil
-                          "Connection parameter ~A is not supported by this client."
-                          parameter)))
+(defmacro %define-enum-normalizer (name (&key default valid-values message))
+  (let ((value (gensym "VALUE"))
+        (normalized (gensym "NORMALIZED")))
+    `(defun ,name (,value)
+       (let ((,normalized
+               (cond ((null ,value) ,default)
+                     ((keywordp ,value) ,value)
+                     ((stringp ,value)
+                      (or (second (assoc ,value ',valid-values :test #'string-equal))
+                          nil))
+                     (t nil))))
+         (unless (member ,normalized ',(mapcar #'second valid-values) :test #'eq)
+           (error 'parameter-error
+                  :parameter ,value
+                  :message ,message))
+         ,normalized))))
 
-(defun %connection-string-set-parameter (parameters name value)
-  (let* ((canonical-name (if (string= name "dbname") "database" name))
-         (entry (assoc canonical-name parameters :test #'string=)))
-    (if entry
-        (setf (cdr entry) value)
-        (push (cons canonical-name value) parameters))
-    parameters))
+(%define-enum-normalizer %normalize-target-session-attrs
+  (:default :any
+   :valid-values (("any" :any)
+                  ("read-write" :read-write)
+                  ("read-only" :read-only)
+                  ("primary" :primary)
+                  ("standby" :standby)
+                  ("prefer-standby" :prefer-standby))
+   :message "TARGET-SESSION-ATTRS must be ANY, READ-WRITE, READ-ONLY, PRIMARY, STANDBY, or PREFER-STANDBY."))
 
-(defun %parse-libpq-connection-string (string)
-  (check-type string string)
-  (let ((length (length string))
-        (position 0)
-        (parameters nil))
-    (labels ((skip-whitespace ()
-               (loop while (and (< position length)
-                                (%connection-string-whitespace-p
-                                 (char string position)))
-                     do (incf position)))
-             (read-value (parameter)
-               (if (and (< position length)
-                        (char= (char string position) #\'))
-                   (progn
-                     (incf position)
-                     (with-output-to-string (stream)
-                       (loop
-                         (when (>= position length)
-                           (%connection-string-parameter-error
-                            parameter "Unterminated quoted connection-string value."))
-                         (let ((character (char string position)))
-                           (cond
-                             ((char= character #\\)
-                              (incf position)
-                              (when (>= position length)
-                                (%connection-string-parameter-error
-                                 parameter
-                                 "A trailing escape has no character to escape."))
-                              (write-char (char string position) stream)
-                              (incf position))
-                             ((char= character #\')
-                              (incf position)
-                              (when (and (< position length)
-                                         (not (%connection-string-whitespace-p
-                                               (char string position))))
-                                (%connection-string-parameter-error
-                                 parameter
-                                 "Quoted value must be followed by whitespace or end of input."))
-                              (return))
-                             (t
-                              (write-char character stream)
-                              (incf position)))))))
-                   (with-output-to-string (stream)
-                     (loop while (and (< position length)
-                                      (not (%connection-string-whitespace-p
-                                            (char string position))))
-                           do (let ((character (char string position)))
-                                (if (char= character #\\)
-                                    (progn
-                                      (incf position)
-                                      (when (>= position length)
-                                        (%connection-string-parameter-error
-                                         parameter
-                                         "A trailing escape has no character to escape."))
-                                      (write-char (char string position) stream)
-                                      (incf position))
-                                    (progn
-                                      (write-char character stream)
-                                      (incf position)))))))))
-      (loop
-        (skip-whitespace)
-        (when (>= position length)
-          (return (nreverse parameters)))
-        (let ((key-start position))
-          (loop while (and (< position length)
-                           (not (%connection-string-whitespace-p
-                                 (char string position)))
-                           (not (char= (char string position) #\=)))
-                do (incf position))
-          (when (= key-start position)
-            (%connection-string-parameter-error
-             nil "Connection-string parameter name cannot be empty."))
-          (let ((key (string-downcase (subseq string key-start position))))
-            (when (%connection-string-contains-nul-p key)
-              (%connection-string-parameter-error key "Parameter name contains NUL."))
-            (skip-whitespace)
-            (unless (and (< position length)
-                         (char= (char string position) #\=))
-              (%connection-string-parameter-error
-               key "Connection-string parameter ~A must contain '='." key))
-            (incf position)
-            (skip-whitespace)
-            (let ((value (read-value key)))
-              (when (%connection-string-contains-nul-p value)
-                (%connection-string-parameter-error
-                 key "Connection-string parameter contains NUL."))
-              (setf parameters
-                    (%connection-string-set-parameter parameters key value)))))))))
+(%define-enum-normalizer %normalize-load-balance-hosts
+  (:default :disable
+   :valid-values (("disable" :disable)
+                  ("random" :random))
+   :message "LOAD-BALANCE-HOSTS must be DISABLE or RANDOM."))
+
+(%define-enum-normalizer %normalize-channel-binding
+  (:default :prefer
+   :valid-values (("disable" :disable)
+                  ("prefer" :prefer)
+                  ("require" :require))
+   :message "CHANNEL-BINDING must be DISABLE, PREFER, or REQUIRE."))
+
+(defun %make-connection-endpoints (&key host hosts hostaddr hostaddrs port ports
+                                         host-supplied-p)
+  (when (and hostaddr hostaddrs)
+    (error 'parameter-error
+           :parameter :hostaddr
+           :message "HOSTADDR and HOSTADDRS are mutually exclusive."))
+  (when (and ports (not (%proper-list-p ports)))
+    (error 'parameter-error
+           :parameter ports
+           :message "PORTS must be a proper list."))
+  (let* ((physical-hosts (cond (hostaddrs
+                                (%connection-endpoint-string-list
+                                 hostaddrs :hostaddrs))
+                               (hostaddr
+                                (%connection-endpoint-string-list
+                                 (list hostaddr) :hostaddr))
+                               (t nil)))
+         (logical-hosts (cond (hosts
+                               (%connection-endpoint-string-list hosts :hosts))
+                              ((and physical-hosts (not host-supplied-p))
+                               (copy-list physical-hosts))
+                              (t
+                               (%connection-endpoint-string-list
+                                (list host) :host))))
+         (endpoint-ports (if ports
+                             (%connection-endpoint-port-list ports)
+                             (list port)))
+         (count (length logical-hosts)))
+    (unless (plusp count)
+      (error 'parameter-error
+             :parameter :hosts
+             :message "At least one PostgreSQL endpoint is required."))
+    (when (and physical-hosts (/= (length physical-hosts) count))
+      (error 'parameter-error
+             :parameter (if hostaddrs :hostaddrs :hostaddr)
+             :message "HOSTADDRS must have one address for each HOST candidate."))
+    (unless (or (= (length endpoint-ports) 1)
+                (= (length endpoint-ports) count))
+      (error 'parameter-error
+             :parameter :ports
+             :message "PORTS must contain one port for each HOST candidate, or one port for all candidates."))
+    (loop for index below count
+          for logical-host = (nth index logical-hosts)
+          for physical-host = (if physical-hosts
+                                 (nth index physical-hosts)
+                                 logical-host)
+          for endpoint-port = (if (= (length endpoint-ports) 1)
+                                  (first endpoint-ports)
+                                  (nth index endpoint-ports))
+          collect (list :host logical-host
+                        :hostaddr physical-host
+                        :port endpoint-port))))
+
+(defun %normalize-startup-parameters (parameters)
+  (unless (%proper-list-p parameters)
+    (error 'parameter-error
+           :parameter parameters
+           :message "Startup parameters must be a proper list of (name . value) pairs."))
+  (let ((seen (make-hash-table :test #'equal))
+        (normalized nil))
+    (dolist (pair parameters (nreverse normalized))
+      (unless (and (consp pair)
+                   (stringp (car pair))
+                   (stringp (cdr pair)))
+        (error 'parameter-error
+               :parameter pair
+               :message "Startup parameters must be (string-name . string-value) pairs."))
+      (let ((name (car pair))
+            (value (cdr pair)))
+        (when (or (zerop (length name))
+                  (find #\Null name)
+                  (find #\Null value))
+          (error 'parameter-error
+                 :parameter pair
+                 :message "Startup parameter names and values must be non-empty and NUL-free."))
+        (when (or (string-equal name "user")
+                  (string-equal name "database")
+                  (string-equal name "application_name"))
+          (error 'parameter-error
+                 :parameter pair
+                 :message "Startup parameters must not override mandatory connection parameters."))
+        (let ((key (string-downcase name)))
+          (when (gethash key seen)
+            (error 'parameter-error
+                   :parameter pair
+                   :message "Startup parameter names must be unique."))
+          (setf (gethash key seen) t))
+        (push (cons name value) normalized)))))

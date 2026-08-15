@@ -102,55 +102,128 @@ is already pending for the caller that owns the connection exchange."
                    remaining)
             (return nil)))))))
 
-(defun result-row (result index)
-  (aref (query-result-rows result) index))
+(defparameter *transaction-isolation-levels*
+  '(("READ UNCOMMITTED" . "READ UNCOMMITTED")
+    ("READ COMMITTED" . "READ COMMITTED")
+    ("REPEATABLE READ" . "REPEATABLE READ")
+    ("SERIALIZABLE" . "SERIALIZABLE")))
 
-(defun %result-column-index (result column)
-  (if (integerp column)
-      column
-      (or (position column (query-result-columns result)
-                    :key #'column-name :test #'string-equal)
-          (error 'parameter-error :parameter column
-                 :message "Unknown result column."))))
+(defun %transaction-isolation-sql (isolation)
+  (let* ((raw (cond ((symbolp isolation) (symbol-name isolation))
+                    ((stringp isolation) isolation)))
+         (normalized (and raw
+                          (substitute #\Space #\-
+                                      (string-upcase raw)))))
+    (or (cdr (assoc normalized *transaction-isolation-levels*
+                     :test #'string=))
+        (error 'parameter-error
+               :parameter isolation
+               :message "Unsupported transaction isolation level."))))
 
-(defun result-column (result column)
-  (let ((index (%result-column-index result column)))
-    (coerce (loop for row across (query-result-rows result)
-                  collect (aref row index)) 'vector)))
+(defun begin-transaction (connection &key isolation read-only deferrable)
+  (let ((clauses (remove nil
+                         (list (and isolation
+                                    (format nil "ISOLATION LEVEL ~A"
+                                            (%transaction-isolation-sql isolation)))
+                               (and read-only "READ ONLY")
+                               (and deferrable "DEFERRABLE")))))
+    (query connection (format nil "BEGIN~@[ ~{~A~^ ~}~]" clauses))))
 
-(defun result-row-alist (result index)
-  (let ((row (result-row result index)))
-    (loop for column across (query-result-columns result)
-          for value across row
-          collect (cons (column-name column) value))))
+(defun commit-transaction (connection)
+  (query connection "COMMIT"))
 
-(defun result-rows-as-alists (result)
-  (loop for index below (query-result-row-count result)
-        collect (result-row-alist result index)))
+(defun rollback-transaction (connection)
+  (query connection "ROLLBACK"))
 
-(defun result-columns (result)
-  (query-result-columns result))
+(defmacro with-transaction ((connection &key isolation read-only deferrable)
+                            &body body)
+  (let ((connection-var (gensym "CONNECTION-"))
+        (committed-var (gensym "COMMITTED-")))
+    `(let ((,connection-var ,connection)
+           (,committed-var nil))
+       (begin-transaction ,connection-var
+                          :isolation ,isolation
+                          :read-only ,read-only
+                          :deferrable ,deferrable)
+       (unwind-protect
+            (multiple-value-prog1 (progn ,@body)
+              (commit-transaction ,connection-var)
+              (setf ,committed-var t))
+         (unless ,committed-var
+           (ignore-errors (rollback-transaction ,connection-var)))))))
 
-(defun result-rows (result)
-  (query-result-rows result))
+(defun %quote-identifier (name)
+  (check-type name string)
+  (when (zerop (length name))
+    (error 'parameter-error :parameter name
+           :message "An SQL identifier must not be empty."))
+  (when (find #\Null name)
+    (error 'parameter-error :parameter name
+           :message "An SQL identifier must not contain NUL."))
+  (with-output-to-string (stream)
+    (write-char #\" stream)
+    (loop for character across name
+          do (if (char= character #\")
+                 (write-string "\"\"" stream)
+                 (write-char character stream)))
+    (write-char #\" stream)))
 
-(defun result-command-tag (result)
-  (query-result-command-tag result))
+(defun %validate-notify-channel (channel)
+  (check-type channel string)
+  (when (zerop (length channel))
+    (error 'parameter-error :parameter channel
+           :message "A NOTIFY channel must not be empty."))
+  (when (find #\Null channel)
+    (error 'parameter-error :parameter channel
+           :message "A NOTIFY channel must not contain NUL."))
+  channel)
 
-(defun result-row-count (result)
-  (query-result-row-count result))
+(defun %execute-identifier-command (connection command identifier)
+  (query connection
+         (format nil "~A ~A"
+                 command
+                 (%quote-identifier (%validate-notify-channel identifier)))))
 
-(defun result-transaction-status (result)
-  (query-result-transaction-status result))
+(defmacro %define-identifier-command (name command documentation)
+  `(defun ,name (connection identifier)
+     ,documentation
+     (%execute-identifier-command connection ,command identifier)))
 
-(defun result-notices (result)
-  (query-result-notices result))
+(%define-identifier-command
+ listen
+ "LISTEN"
+ "Register CONNECTION to receive notifications on IDENTIFIER.")
 
-(defun result-portal-suspended-p (result)
-  (query-result-portal-suspended-p result))
+(%define-identifier-command
+ unlisten
+ "UNLISTEN"
+ "Remove CONNECTION from the notification channel IDENTIFIER.")
 
-(defun result-row-alists (result)
-  (result-rows-as-alists result))
+(defun unlisten-all (connection)
+  "Remove CONNECTION from all notification channels."
+  (query connection "UNLISTEN *"))
+
+(defun notify (connection channel &optional (payload nil payload-p))
+  "Send a NOTIFY on CHANNEL, optionally carrying PAYLOAD."
+  (%validate-notify-channel channel)
+  (when payload-p
+    (check-type payload string)
+    (when (find #\Null payload)
+      (error 'parameter-error :parameter payload
+             :message "A NOTIFY payload must not contain NUL.")))
+  (query connection
+         "SELECT pg_notify($1, $2)"
+         :parameters (list channel (if payload-p payload ""))
+         :parameter-type-oids '(25 25)))
+
+(defun savepoint (connection name)
+  (query connection (format nil "SAVEPOINT ~A" (%quote-identifier name))))
+
+(defun release-savepoint (connection name)
+  (query connection (format nil "RELEASE SAVEPOINT ~A" (%quote-identifier name))))
+
+(defun rollback-to-savepoint (connection name)
+  (query connection (format nil "ROLLBACK TO SAVEPOINT ~A" (%quote-identifier name))))
 
 (defun flush (connection)
   "Send a PostgreSQL protocol Flush message for CONNECTION.
@@ -162,29 +235,3 @@ waiting for an extended-query Sync boundary."
     (%require-open-connection connection)
     (%send-frontend-message connection (encode-flush-message))
     t))
-
-(defun row-value (result row-index column)
-  "Return one value from RESULT's ROW-INDEX and COLUMN.
-
-COLUMN may be a zero-based integer or a column name string."
-  (aref (result-row result row-index)
-        (%result-column-index result column)))
-
-(defun %decode-query-row (connection columns raw-row)
-  (unless (= (length columns) (length raw-row))
-    (error 'protocol-error
-           :message "PostgreSQL DataRow column count does not match RowDescription."
-           :expected (length columns)
-           :actual (length raw-row)))
-  (let ((decoded (make-array (length raw-row))))
-    (loop for index below (length raw-row)
-          for column = (and (< index (length columns)) (aref columns index))
-          for cell = (aref raw-row index)
-          do (setf (aref decoded index)
-                   (if (sql-null-p cell)
-                       +sql-null+
-                       (decode-value (connection-type-registry connection)
-                                     (column-type-oid column)
-                                     cell
-                                     :format (column-format-code column)))))
-    decoded))

@@ -12,8 +12,22 @@
                        (cursor--pending-rows cursor)
                        (coerce decoded 'vector)))))
 
+(defun %cursor-signal-pending-error (connection)
+  (when (connection--pending-error connection)
+    (let ((condition (connection--pending-error connection)))
+      (setf (connection--pending-error connection) nil)
+      (error condition))))
+
+(defun %cursor-finalize-close (cursor connection)
+  (setf (cursor-closed-p cursor) t
+        (connection--active-cursors connection)
+        (delete cursor (connection--active-cursors connection)
+                :test #'eq))
+  t)
+
 (defun %cursor-read-batch (cursor &optional execute-message)
-  (let ((raw-rows nil)
+  (let ((connection (cursor-connection cursor))
+        (raw-rows nil)
         (command-tag nil)
         (command-complete-p nil)
         (portal-suspended-p nil))
@@ -23,7 +37,7 @@
                    (let ((total (+ (cursor--result-bytes cursor)
                                    (length (backend-message-payload message)))))
                      (when (> total limit)
-                       (%retire-connection (cursor-connection cursor))
+                       (%retire-connection connection)
                        (error 'query-error
                               :message "The client-side cursor result byte limit was exceeded."))
                      (setf (cursor--result-bytes cursor) total)))))
@@ -31,17 +45,16 @@
                (let ((limit (cursor-max-result-rows cursor)))
                  (when (and limit
                             (>= (cursor--result-row-count cursor) limit))
-                   (%retire-connection (cursor-connection cursor))
+                   (%retire-connection connection)
                    (error 'query-error
                           :message "The client-side cursor result row limit was exceeded."))
                  (incf (cursor--result-row-count cursor)))))
       (when execute-message
-        (%send-frontend-message (cursor-connection cursor) execute-message)
-        (%send-frontend-message (cursor-connection cursor)
-                                (encode-sync-message)))
-      (loop for message = (%read-backend-message (cursor-connection cursor))
+        (%send-frontend-message connection execute-message)
+        (%send-frontend-message connection (encode-sync-message)))
+      (loop for message = (%read-backend-message connection)
             do (multiple-value-bind (kind ignored)
-                   (%process-backend-message (cursor-connection cursor) message)
+                   (%process-backend-message connection message)
                  (declare (ignore ignored))
                  (case kind
                    (:row-description
@@ -70,17 +83,13 @@
                     (error 'copy-error
                            :message "COPY IN cannot be consumed by a cursor."))
                    (:copy-out-response
-                    (error 'copy-error
+                   (error 'copy-error
                            :message "COPY OUT cannot be consumed by a cursor."))
                    (:copy-both-response
                     (error 'copy-error
                            :message "COPY BOTH cannot be consumed by a cursor."))
                    (:ready-for-query
-                    (when (connection--pending-error (cursor-connection cursor))
-                      (let ((condition
-                              (connection--pending-error (cursor-connection cursor))))
-                        (setf (connection--pending-error (cursor-connection cursor)) nil)
-                        (error condition)))
+                    (%cursor-signal-pending-error connection)
                     (return)))))
       (%cursor-append-rows cursor raw-rows)
       (when command-complete-p
@@ -219,7 +228,7 @@ across all fetches."
                       (encode-execute-message
                        :portal-name (cursor-portal-name cursor)
                        :max-rows count))
-                      (%cursor-take-rows cursor count))))))))))
+                     (%cursor-take-rows cursor count))))))))))
 
 (defun cursor-close (cursor)
   "Close CURSOR and release its server-side portal and owned statement."
@@ -230,11 +239,8 @@ across all fetches."
           t
           (progn
             (unless (connection-open connection)
-              (setf (cursor-closed-p cursor) t
-                    (connection--active-cursors connection)
-                    (delete cursor (connection--active-cursors connection)
-                            :test #'eq))
-              (return-from cursor-close t))
+              (return-from cursor-close
+                (%cursor-finalize-close cursor connection)))
             (%call-with-query-timeout
              connection
              (lambda ()
@@ -242,13 +248,15 @@ across all fetches."
                  (unless (cursor-done-p cursor)
                    (%send-frontend-message
                     connection
-                    (encode-close-message (cursor-portal-name cursor)
-                                           :kind :portal)))
+                    (encode-close-message
+                     (cursor-portal-name cursor)
+                     :kind :portal)))
                  (when (cursor--close-statement-p cursor)
                    (%send-frontend-message
                     connection
-                    (encode-close-message (cursor-statement-name cursor)
-                                           :kind :statement)))
+                    (encode-close-message
+                     (cursor-statement-name cursor)
+                     :kind :statement)))
                  (%send-frontend-message connection (encode-sync-message))
                  (loop for message = (%read-backend-message connection)
                        do (multiple-value-bind (kind value)
@@ -257,13 +265,6 @@ across all fetches."
                             (case kind
                               (:error-response nil)
                               (:ready-for-query
-                               (when (connection--pending-error connection)
-                                 (let ((condition (connection--pending-error connection)))
-                                   (setf (connection--pending-error connection) nil)
-                                   (error condition)))
+                               (%cursor-signal-pending-error connection)
                                (return)))))
-                 (setf (cursor-closed-p cursor) t
-                       (connection--active-cursors connection)
-                       (delete cursor (connection--active-cursors connection)
-                               :test #'eq))
-                 t))))))))
+                 (%cursor-finalize-close cursor connection)))))))))
