@@ -6,8 +6,23 @@
 - `src/` contains the package, wire protocol, transport, connection, pool,
   type, and COPY implementation. Data records live in focused `*-data.lisp`
   files, while protocol and state-machine logic stays in the corresponding
-  operation files.
-- `t/` contains the self-contained protocol and client tests.
+  operation files. Physical replication lives in `replication.lisp`; the
+  pgoutput decoder and relation cache live in `logical-replication.lisp`,
+  with protocol fixtures split across focused `logical-replication-*.lisp`
+  test files.
+- `t/` contains the self-contained protocol and client tests, split by
+  concern (`connection-string-tests.lisp`, `connection-startup-tests.lisp`,
+  `connection-tests.lisp`,
+  `connection-auth-tests.lisp`, `query-tests.lisp`,
+  `query-pipeline-tests.lisp`, `protocol-codec-array-tests.lisp`,
+  `network-codec-tests.lisp`,
+  `type-registry-tests.lisp`, `temporal-binary-codec-tests.lisp`,
+  `logical-replication-message-codec-tests.lisp`,
+  `logical-replication-decoder-tests.lisp`, and other protocol-focused files)
+  so parser/transport/state changes stay reviewable. Shared helpers are also
+  split by responsibility: `support.lisp` holds generic assertions,
+  `support-wire.lisp` holds protocol/wire builders, and
+  `support-fixtures.lisp` holds reusable connection fixtures.
 - `docs/mkdocs.yml` and `docs/src/` contain this documentation site.
 - `run-tests.lisp` is the reproducible local ASDF test entry point; the flake
   exposes the same test boundary as `.#test`.
@@ -52,6 +67,22 @@ The flake provides the same test boundary and a coverage artifact:
 nix run .#test
 nix build .#coverage
 ```
+
+When concurrent SBCL or `cl-weave` sessions contend on the shared user cache,
+wrap the command with the repository helper so that one verification run gets a
+private temporary `XDG_CACHE_HOME`:
+
+```text
+sh scripts/with-isolated-cache.sh nix run .#test
+sh scripts/with-isolated-cache.sh nix develop --command cl-weave list cl-postgresql-kit/test --filter protocol
+```
+
+The helper leaves an explicit `XDG_CACHE_HOME` unchanged; otherwise it creates
+and removes a temporary cache directory around the wrapped command.
+
+`nix develop` also exposes the interactive `cl-weave` CLI and the `paredit`
+formatter/linter on `PATH`, so local test planning and structural edits use
+the same pinned toolchain as the flake checks.
 
 Coverage is measured by `scripts/run-coverage.lisp` through `cl-weave` for
 production code. Enforce the 100% target with cl-weave's native thresholds:

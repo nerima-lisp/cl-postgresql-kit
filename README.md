@@ -120,6 +120,17 @@ nix run .#test
 nix build .#coverage
 ```
 
+When concurrent Common Lisp sessions share the default SBCL FASL cache, use the
+repository wrapper to give one verification run its own temporary cache root:
+
+```text
+sh scripts/with-isolated-cache.sh nix run .#test
+sh scripts/with-isolated-cache.sh nix develop --command cl-weave list cl-postgresql-kit/test --filter protocol
+```
+
+The wrapper preserves an explicitly-set `XDG_CACHE_HOME`; otherwise it creates
+and removes a temporary cache directory for the wrapped command.
+
 ## Contributing
 
 Please keep public API changes, protocol behavior, and documentation in sync.

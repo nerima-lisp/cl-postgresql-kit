@@ -56,7 +56,8 @@ definition remains the authoritative list of exported symbols.
   limits.
 - `query-async` starts an asynchronous request flow.
 - `query-cps` composes the asynchronous query Promise with success and error
-  continuations through `cl-concurrent-kit`.
+  continuations through `cl-concurrent-kit`; both continuations are validated
+  before the underlying asynchronous operation is started.
 - `flush` flushes pending frontend messages when an asynchronous sequence
   needs explicit control.
 - `function-call` invokes a PostgreSQL function through the function-call
@@ -87,7 +88,8 @@ definition remains the authoritative list of exported symbols.
 - `query-pipeline` sends batches and returns results in request order.
 - `query-pipeline-async` exposes the asynchronous pipeline variant.
 - `query-pipeline-cps` composes that Promise with success and error
-  continuations through `cl-concurrent-kit`.
+  continuations through `cl-concurrent-kit`, with the same preflight
+  validation as `query-cps`.
 
 ## Prepared statements and cursors
 
@@ -155,6 +157,10 @@ definition remains the authoritative list of exported symbols.
   server-to-client chunks.
 - `encode-copy-row`, `decode-copy-row`, `encode-copy-text-stream`, and
   `decode-copy-text-stream` convert logical rows using a type registry.
+- Internally, `copy-codecs` owns text row codecs plus the shared row format
+  boundary, `copy-codecs-row-binary` owns binary row payload codecs,
+  `copy-codecs-text-stream` owns text stream framing, and
+  `copy-codecs-binary` owns binary COPY stream framing.
 
 ### Streaming replication
 
@@ -222,6 +228,9 @@ special treatment:
 - `postgres-array`, `postgres-range`, and `postgres-composite` for structured
   values; and
 - `sql-null` and `+sql-null+` for SQL `NULL`.
+
+`bytea-value` affects parameter encoding. Result decoding for built-in `bytea`
+text codecs expects PostgreSQL's hex output form (`\\x...`).
 
 ## Large objects
 

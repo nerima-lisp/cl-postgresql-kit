@@ -13,6 +13,11 @@ other supported startup version. When a server sends
 uses it for subsequent protocol parsing. This describes the wire-protocol
 boundary, not support for every PostgreSQL server release or extension.
 
+For built-in `bytea` text decoding, the client accepts PostgreSQL's hex form
+(`\\x...`) and rejects the legacy escape form. Applications that still depend
+on escape-form `bytea` text results should switch the query or server setting
+to hex output before relying on the built-in codec.
+
 ## Authentication
 
 The connection startup path supports these authentication mechanisms when the

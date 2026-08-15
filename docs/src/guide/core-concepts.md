@@ -79,6 +79,8 @@ and notifications can be handled through connection handlers or polled with
 `copy-in-start`/`copy-in-write`/`copy-in-finish` implement `COPY FROM STDIN`,
 and `copy-out-start`/`copy-out-read` implement `COPY TO STDOUT`. The
 `copy-both-*` operations expose the bidirectional flow used by streaming
-replication. `replication-start` and `replication-read` decode XLogData and
+replication. Internally, COPY startup/client-write logic lives in
+`copy-session`, while server-read/completion logic lives in
+`copy-session-read`. `replication-start` and `replication-read` decode XLogData and
 primary keepalive messages; standby feedback is sent with the corresponding
 replication status functions.
