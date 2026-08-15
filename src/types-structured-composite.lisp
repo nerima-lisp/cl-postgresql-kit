@@ -36,7 +36,7 @@
           (when (consp provided-oids)
             (unless (and (= (length provided-oids) (length field-oids))
                          (loop for index below (length field-oids)
-                               always (= (aref provided-oids index)
+                               always (= (nth index provided-oids)
                                           (aref field-oids index))))
               (error 'parameter-error :parameter value
                      :message "PostgreSQL composite field OIDs do not match its type definition")))))
