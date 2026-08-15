@@ -33,10 +33,13 @@
                :message "PostgreSQL composite field count does not match its type definition"))
       (when composite
         (let ((provided-oids (postgres-composite-field-oids composite)))
-          (when (consp provided-oids)
+          (when (and (or (listp provided-oids)
+                         (and (vectorp provided-oids)
+                              (not (stringp provided-oids))))
+                     (plusp (length provided-oids)))
             (unless (and (= (length provided-oids) (length field-oids))
                          (loop for index below (length field-oids)
-                               always (= (nth index provided-oids)
+                               always (= (elt provided-oids index)
                                           (aref field-oids index))))
               (error 'parameter-error :parameter value
                      :message "PostgreSQL composite field OIDs do not match its type definition")))))

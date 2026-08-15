@@ -83,7 +83,7 @@
                      (make-postgres-tid :block-number (ash 1 32))))
     (it-binary-round-trips-each
         (registry
-         '((:regproc-family 24
+         ((:regproc-family 24
             #(0 0 0 42)
             42
             =)

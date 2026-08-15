@@ -1,7 +1,7 @@
 (in-package #:cl-postgresql-kit)
 
 (defun %register-built-in-types (registry)
-  (flet ((register (oid name text-decoder text-encoder
+  (labels ((register (oid name text-decoder text-encoder
                   &key binary-decoder binary-encoder)
            (register-type registry :oid oid :name name
                           :text-decoder text-decoder :text-encoder text-encoder

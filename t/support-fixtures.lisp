@@ -191,8 +191,8 @@ to override message details when needed."
                        on-write)
      &body body)
   "Bind TRANSPORT to a probe transport that records every write into WRITES."
-  `(let ((,writes nil)
-         (,transport
+  `(let* ((,writes nil)
+          (,transport
            (make-instance
             ,class
             ,@(when input
