@@ -6,6 +6,7 @@
     "password" "passfile" "port" "replication" "service"
     "sslcert" "sslkey" "sslmode"
     "sslpassword" "sslrootcert" "ssl_min_protocol_version"
+    "ssl_max_protocol_version"
     "sslnegotiation" "gssencmode"
     "krbsrvname" "channel_binding" "require_auth"
     "target_session_attrs"
@@ -33,12 +34,11 @@
            :message "Connection endpoint lists must be proper lists."))
   (mapcar (lambda (item)
             (unless (and (stringp item)
-                         (plusp (length item))
                          (not (find #\Null item)))
               (error 'parameter-error
                      :parameter item
                      :message (format nil
-                                      "Each ~A entry must be a non-empty NUL-free string."
+                                      "Each ~A entry must be a NUL-free string."
                                       parameter)))
             item)
           value))
@@ -213,10 +213,16 @@
              :parameter :ports
              :message "PORTS must contain one port for each HOST candidate, or one port for all candidates."))
     (loop for index below count
-          for logical-host = (nth index logical-hosts)
-          for physical-host = (if physical-hosts
-                                 (nth index physical-hosts)
-                                 logical-host)
+          for raw-logical-host = (nth index logical-hosts)
+          for logical-host = (if (zerop (length raw-logical-host))
+                                (%connection-default-unix-socket-directory)
+                                raw-logical-host)
+          for raw-physical-host = (if physical-hosts
+                                      (nth index physical-hosts)
+                                      raw-logical-host)
+          for physical-host = (if (zerop (length raw-physical-host))
+                                  logical-host
+                                  raw-physical-host)
           for endpoint-port = (if (= (length endpoint-ports) 1)
                                   (first endpoint-ports)
                                   (nth index endpoint-ports))

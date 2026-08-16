@@ -33,7 +33,7 @@
 
 (defparameter *socket-tls-option-keys*
   '(:alpn-protocols :certificate :key :password :cipher-list :method
-    :verify-location :min-proto-version))
+    :verify-location :min-proto-version :max-proto-version))
 
 (defun %transport-proper-list-p (value)
   (and (listp value)
@@ -75,7 +75,7 @@
           (t
            (normalize-location value)))))
 
-(defun %normalize-tls-min-proto-version (value)
+(defun %normalize-tls-proto-version (value parameter-name)
   (cond ((null value) nil)
         ((member value '(:tlsv1 :tlsv1-1 :tlsv1-2 :tlsv1-3) :test #'eq)
          value)
@@ -88,12 +88,22 @@
                 (error 'parameter-error
                        :parameter value
                        :message
-                       "TLS min-proto-version must be TLSv1, TLSv1.1, TLSv1.2, or TLSv1.3."))))
+                       (format nil
+                               "TLS ~A must be TLSv1, TLSv1.1, TLSv1.2, or TLSv1.3."
+                               parameter-name)))))
         (t
          (error 'parameter-error
                 :parameter value
                 :message
-                "TLS min-proto-version must be a TLS version string or keyword."))))
+                (format nil
+                        "TLS ~A must be a TLS version string or keyword."
+                        parameter-name)))))
+
+(defun %normalize-tls-min-proto-version (value)
+  (%normalize-tls-proto-version value "min-proto-version"))
+
+(defun %normalize-tls-max-proto-version (value)
+  (%normalize-tls-proto-version value "max-proto-version"))
 
 (defun %normalize-tls-option-value (key value)
   (case key
@@ -118,6 +128,8 @@
      (%normalize-tls-verify-location value))
     (:min-proto-version
      (%normalize-tls-min-proto-version value))
+    (:max-proto-version
+     (%normalize-tls-max-proto-version value))
     (:method value)))
 
 (defun %normalize-tls-options (value)
@@ -144,7 +156,21 @@ is used by the optional TLS system to create a connection-local SSL context."
              (push key seen)
              (push key result)
              (push (%normalize-tls-option-value key option-value) result))
-    (nreverse result)))
+    (let ((normalized (nreverse result)))
+      (let ((minimum (getf normalized :min-proto-version))
+            (maximum (getf normalized :max-proto-version)))
+        (when (and minimum maximum
+                   (> (position minimum
+                                '(:tlsv1 :tlsv1-1 :tlsv1-2 :tlsv1-3)
+                                :test #'eq)
+                      (position maximum
+                                '(:tlsv1 :tlsv1-1 :tlsv1-2 :tlsv1-3)
+                                :test #'eq)))
+          (error 'parameter-error
+                 :parameter :max-proto-version
+                 :message
+                 "TLS max-proto-version must not be older than min-proto-version.")))
+      normalized)))
 
 (defun %transport-octet-vector-p (value)
   (and (vectorp value)

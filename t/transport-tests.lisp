@@ -25,20 +25,24 @@
        :cipher-list nil
        :method :default
        :verify-location :default
-       :min-proto-version nil)
+       :min-proto-version nil
+       :max-proto-version nil)
       (:alpn-protocols nil :certificate nil :key nil
        :password nil :cipher-list nil :method :default
-       :verify-location :default :min-proto-version nil))
+       :verify-location :default :min-proto-version nil
+       :max-proto-version nil)))
      (((:alpn-protocols ("postgres")
        :certificate #P"/tmp/cert.pem"
        :key #P"/tmp/key.pem"
        :verify-location (#P"/tmp/ca.pem")
-       :min-proto-version "TLSv1.2")
+       :min-proto-version "TLSv1.2"
+       :max-proto-version "TLSv1.3")
       (:alpn-protocols ("postgres")
        :certificate "/tmp/cert.pem"
        :key "/tmp/key.pem"
        :verify-location ("/tmp/ca.pem")
-       :min-proto-version :tlsv1-2)))))
+       :min-proto-version :tlsv1-2
+       :max-proto-version :tlsv1-3))))
   (is-funcall-results
    #'cl-postgresql-kit::%normalize-tls-verify-location
    '((:default :default)
@@ -58,6 +62,9 @@
      (:verify-location (42))
      (:password 42)
      (:min-proto-version "SSLv3")
+     (:max-proto-version "SSLv3")
+     (:min-proto-version "TLSv1.3"
+      :max-proto-version "TLSv1.2")
      (:method :x :method :y))
    #'cl-postgresql-kit::%normalize-tls-options))
 

@@ -1,24 +1,26 @@
 (in-package #:cl-postgresql-kit)
 
 (defun %parse-connection-port (value &optional (parameter "port"))
-  (let ((port (handler-case (parse-integer value :junk-allowed nil)
-                (error () nil))))
+  (let ((port (if (zerop (length value))
+                  5432
+                  (handler-case (parse-integer value :junk-allowed nil)
+                    (error () nil)))))
     (unless (and (integerp port) (<= 1 port 65535))
       (%connection-string-parameter-error
        parameter "Port must be an integer between 1 and 65535."))
     port))
 
-(defun %parse-connection-comma-list (value parameter &optional parser)
+(defun %parse-connection-comma-list (value parameter &optional parser allow-empty-p)
   (let ((length (length value))
         (start 0)
         (items nil))
-    (when (zerop length)
+    (when (and (zerop length) (not allow-empty-p))
       (%connection-string-parameter-error
        parameter "Comma-separated connection values cannot be empty."))
     (loop
       for separator = (position #\, value :start start)
       for end = (or separator length)
-      do (when (= start end)
+      do (when (and (= start end) (not allow-empty-p))
            (%connection-string-parameter-error
             parameter "Comma-separated connection values cannot contain empty entries."))
          (push (if parser
@@ -31,11 +33,11 @@
 
 (defun %parse-connection-host-list (value parameter)
   (mapcar (lambda (host)
-            (when (find #\Null host)
-              (%connection-string-parameter-error
-               parameter "Host values must not contain NUL."))
+          (when (find #\Null host)
+            (%connection-string-parameter-error
+             parameter "Host values must not contain NUL."))
             host)
-          (%parse-connection-comma-list value parameter)))
+          (%parse-connection-comma-list value parameter nil t)))
 
 (defun %parse-connection-nonnegative-integer (value parameter)
   (let ((number (handler-case (parse-integer value :junk-allowed nil)
@@ -92,6 +94,7 @@
     ("PGSSLKEY" . "sslkey")
     ("PGSSLROOTCERT" . "sslrootcert")
     ("PGSSLMINPROTOCOLVERSION" . "ssl_min_protocol_version")
+    ("PGSSLMAXPROTOCOLVERSION" . "ssl_max_protocol_version")
     ("PGGSSENCMODE" . "gssencmode")
     ("PGKRBSRVNAME" . "krbsrvname")
     ("PGCHANNELBINDING" . "channel_binding")
@@ -394,7 +397,7 @@
             (%connection-append-list-option
              options :port :ports
              (%parse-connection-comma-list
-              (cdr port) "port" #'%parse-connection-port))))
+              (cdr port) "port" #'%parse-connection-port t))))
     options))
 
 (defun %connection-basic-options (parameters)
@@ -448,7 +451,8 @@
                        ("sslkey" . :key)
                        ("sslpassword" . :password)
                        ("sslrootcert" . :verify-location)
-                       ("ssl_min_protocol_version" . :min-proto-version)))
+                       ("ssl_min_protocol_version" . :min-proto-version)
+                       ("ssl_max_protocol_version" . :max-proto-version)))
       (%with-connection-parameter (entry parameters (car mapping))
         (setf options
               (%connection-append-tls-option

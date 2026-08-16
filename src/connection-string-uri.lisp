@@ -51,52 +51,47 @@
     (loop
       for separator = (position #\, hostport :start start)
       for end = (or separator length)
-      do (when (= start end)
-           (%connection-string-parameter-error
-            "host" "URI host list cannot contain empty entries."))
-         (let ((host nil)
+      do (let ((host "")
                (port nil))
-           (if (char= (char hostport start) #\[)
-               (let ((closing-position
-                       (position #\] hostport :start (1+ start) :end end)))
-                 (unless closing-position
-                   (%connection-string-parameter-error
-                    "host" "Bracketed IPv6 host is missing ']'."))
-                 (when (= closing-position (1+ start))
-                   (%connection-string-parameter-error
-                    "host" "IPv6 host cannot be empty."))
-                 (setf host
-                       (%percent-decode-connection-component
-                        hostport :start (1+ start) :end closing-position
-                        :parameter "host"))
-                 (let ((suffix-start (1+ closing-position)))
-                   (unless (or (= suffix-start end)
-                               (and (char= (char hostport suffix-start) #\:)
-                                    (< (1+ suffix-start) end)))
+           (unless (= start end)
+             (if (char= (char hostport start) #\[)
+                 (let ((closing-position
+                         (position #\] hostport :start (1+ start) :end end)))
+                   (unless closing-position
                      (%connection-string-parameter-error
-                      "host" "Bracketed IPv6 host may only be followed by ':port'."))
-                   (when (< suffix-start end)
-                     (setf port (subseq hostport (1+ suffix-start))))))
-               (let ((first-colon (position #\: hostport :start start :end end))
-                     (last-colon (position #\: hostport :start start :end end
-                                           :from-end t)))
-                 (when (and first-colon (/= first-colon last-colon))
-                   (%connection-string-parameter-error
-                    "host" "IPv6 hosts must be enclosed in '[' and ']'."))
-                 (if first-colon
-                     (progn
-                       (unless (= first-colon start)
-                         (setf host
-                               (%percent-decode-connection-component
-                                hostport :start start :end first-colon
-                                :parameter "host")))
-                       (setf port (subseq hostport (1+ first-colon) end)))
-                     (setf host
-                           (%percent-decode-connection-component
-                            hostport :start start :end end :parameter "host")))))
-           (when (and port (zerop (length port)))
-             (%connection-string-parameter-error
-              "port" "URI port cannot be empty."))
+                      "host" "Bracketed IPv6 host is missing ']'."))
+                   (when (= closing-position (1+ start))
+                     (%connection-string-parameter-error
+                      "host" "IPv6 host cannot be empty."))
+                   (setf host
+                         (%percent-decode-connection-component
+                          hostport :start (1+ start) :end closing-position
+                          :parameter "host"))
+                   (let ((suffix-start (1+ closing-position)))
+                     (unless (or (= suffix-start end)
+                                 (and (char= (char hostport suffix-start) #\:)
+                                      (< (1+ suffix-start) end)))
+                       (%connection-string-parameter-error
+                        "host" "Bracketed IPv6 host may only be followed by ':port'."))
+                     (when (< suffix-start end)
+                       (setf port (subseq hostport (1+ suffix-start))))))
+                 (let ((first-colon (position #\: hostport :start start :end end))
+                       (last-colon (position #\: hostport :start start :end end
+                                             :from-end t)))
+                   (when (and first-colon (/= first-colon last-colon))
+                     (%connection-string-parameter-error
+                      "host" "IPv6 hosts must be enclosed in '[' and ']'."))
+                   (if first-colon
+                       (progn
+                         (unless (= first-colon start)
+                           (setf host
+                                 (%percent-decode-connection-component
+                                  hostport :start start :end first-colon
+                                  :parameter "host")))
+                         (setf port (subseq hostport (1+ first-colon) end)))
+                       (setf host
+                             (%percent-decode-connection-component
+                              hostport :start start :end end :parameter "host"))))))
            (push host hosts)
            (push port ports))
          (if separator
@@ -133,11 +128,7 @@
 (defun %connection-uri-host-parameter-value (hosts)
   (if (= (length hosts) 1)
       (first hosts)
-      (progn
-        (when (some #'null hosts)
-          (%connection-string-parameter-error
-           "host" "Every host in a URI host list must be non-empty."))
-        (format nil "~{~A~^,~}" hosts))))
+      (format nil "~{~A~^,~}" hosts)))
 
 (defun %connection-uri-port-parameter-value (ports)
   (if (= (length ports) 1)

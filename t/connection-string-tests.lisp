@@ -68,14 +68,19 @@
             (with-test-environment-variable ("PGAPPNAME" "env-app")
               (with-test-environment-variable
                   ("PGSSLMINPROTOCOLVERSION" "TLSv1.2")
-                (is-option-values
-                 (parse-connection-string "")
-                 (:host "env.example" string=)
-                 (:port 5444 =)
-                 (:database "env-db" string=)
-                 (:user "env-user" string=)
-                 (:application-name "env-app" string=)
-                 (:tls-options '(:min-proto-version :tlsv1-2) equal)))))))))
+                (with-test-environment-variable
+                    ("PGSSLMAXPROTOCOLVERSION" "TLSv1.3")
+                  (is-option-values
+                   (parse-connection-string "")
+                   (:host "env.example" string=)
+                   (:port 5444 =)
+                   (:database "env-db" string=)
+                   (:user "env-user" string=)
+                   (:application-name "env-app" string=)
+                   (:tls-options
+                    '(:min-proto-version :tlsv1-2
+                      :max-proto-version :tlsv1-3)
+                    equal))))))))))
   (let ((transport (make-memory-transport)))
     (is-connection-values
      (make-connection-from-string
@@ -168,12 +173,8 @@
     (concatenate 'string "us" (string (code-char 0)) "er=alice")
     "user alice"
     (concatenate 'string "user=a" (string (code-char 0)) "b")
-    "port="
-    "port=5432,"
     "port=0"
     "port=65536"
-    "host=,localhost"
-    "hostaddr=,127.0.0.1"
     "connect_timeout=-1"
     "connect_timeout=abc"
     "require_auth="
@@ -190,11 +191,9 @@
     "postgresql://localhost/app#fragment"
     "postgresql://localhost/app?query"
     "postgresql://localhost/app?=value"
-    "postgresql://,localhost/app"
     "postgresql://[::1/app"
     "postgresql://[]/app"
     "postgresql://[::1]x/app"
-    "postgresql://localhost:/app"
     "postgresql://::1/app"
     "postgresql://localhost:65536/app"
     "mysql://localhost/db")
@@ -255,7 +254,32 @@
   (let ((default-host #+win32 "127.0.0.1" #-win32 "/tmp"))
     (is-option-values
      (parse-connection-string "host=")
-     (:host default-host string=)))
+     (:host default-host string=))
+    (is-option-values
+     (parse-connection-string
+      "host=,localhost hostaddr=,127.0.0.1 port=,5433")
+     (:hosts '("" "localhost") equal)
+     (:hostaddrs '("" "127.0.0.1") equal)
+     (:ports '(5432 5433) equal))
+    (is (equal
+         (list (list :host default-host :hostaddr default-host :port 5432)
+               (list :host "localhost" :hostaddr "127.0.0.1" :port 5433))
+         (cl-postgresql-kit::%make-connection-endpoints
+          :host ""
+          :hosts '("" "localhost")
+          :hostaddr ""
+          :hostaddrs '("" "127.0.0.1")
+          :port 5432
+          :ports '(5432 5433)
+          :host-supplied-p t))))
+  (is-option-values
+   (parse-connection-uri
+    "postgresql://,localhost:5433/app")
+   (:hosts '("" "localhost") equal)
+   (:ports '(5432 5433) equal))
+  (is-option-values
+   (parse-connection-uri "postgresql://localhost:/app")
+   (:host "localhost" string=))
   (is-option-values
    (parse-connection-uri
     "postgresql://first.example:5433,second.example/app")
@@ -274,13 +298,14 @@
 
 (deftest tls-option-plumbing
   (let ((options
-          (parse-connection-string
-           "sslcert=client.crt sslkey=client.key sslpassword='secret' sslrootcert=ca.crt ssl_min_protocol_version=TLSv1.2")))
+   (parse-connection-string
+                    "sslcert=client.crt sslkey=client.key sslpassword='secret' sslrootcert=ca.crt ssl_min_protocol_version=TLSv1.2 ssl_max_protocol_version=TLSv1.3")))
     (is (equal '(:certificate "client.crt"
                  :key "client.key"
                  :password "secret"
                  :verify-location "ca.crt"
-                 :min-proto-version :tlsv1-2)
+                 :min-proto-version :tlsv1-2
+                 :max-proto-version :tlsv1-3)
                (getf options :tls-options))))
   (let ((options (parse-connection-string "sslrootcert=system")))
     (is (eq :verify-full (getf options :ssl-mode)))

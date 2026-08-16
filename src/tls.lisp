@@ -2,7 +2,8 @@
 
 (defun %tls-stream-options (tls-options)
   (loop for (key value) on tls-options by #'cddr
-        unless (member key '(:verify-location :min-proto-version) :test #'eq)
+        unless (member key '(:verify-location :min-proto-version :max-proto-version)
+                         :test #'eq)
           append (list key value)))
 
 (defun %tls-protocol-version (version)
@@ -11,6 +12,16 @@
     (:tlsv1-1 #x0302)
     (:tlsv1-2 #x0303)
     (:tlsv1-3 #x0304)))
+
+(defun %tls-set-max-proto-version (context version)
+  (let ((setter (and (fboundp 'cl+ssl::ssl-ctx-set-max-proto-version)
+                     (symbol-function 'cl+ssl::ssl-ctx-set-max-proto-version))))
+    (unless setter
+      (error 'tls-error
+             :message "CL+SSL does not support max-proto-version."))
+    (unless (zerop (funcall setter context (%tls-protocol-version version)))
+      (error 'tls-error
+             :message "Unable to set TLS max-proto-version."))))
 
 (defmethod transport-start-tls ((transport socket-transport) &key hostname verify)
   "Upgrade an open socket transport with CL+SSL.
@@ -23,9 +34,10 @@ preserving the transport API used by CONNECTION."
       (error 'tls-error :message "The socket transport is not open."))
     (handler-case
         (let ((verify-location (getf tls-options :verify-location))
-              (min-proto-version (getf tls-options :min-proto-version)))
+              (min-proto-version (getf tls-options :min-proto-version))
+              (max-proto-version (getf tls-options :max-proto-version)))
           (setf (socket-transport-stream transport)
-                (if (or verify-location min-proto-version)
+                (if (or verify-location min-proto-version max-proto-version)
                     (let ((context
                             (apply #'cl+ssl:make-context
                                    (append
@@ -39,6 +51,8 @@ preserving the transport API used by CONNECTION."
                                           (if verify
                                               cl+ssl:+ssl-verify-peer+
                                               cl+ssl:+ssl-verify-none+))))))
+                      (when max-proto-version
+                        (%tls-set-max-proto-version context max-proto-version))
                       (cl+ssl:with-global-context (context :auto-free-p t)
                         (apply #'cl+ssl:make-ssl-client-stream
                                stream
