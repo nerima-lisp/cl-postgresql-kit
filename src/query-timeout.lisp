@@ -4,7 +4,8 @@
   (or (when (connection-cancel-transport-factory connection)
         (funcall (connection-cancel-transport-factory connection) connection))
       (when (typep (connection-transport connection) 'socket-transport)
-        (make-socket-transport :host (connection-host connection)
+        (make-socket-transport :host (or (connection-hostaddr connection)
+                                         (connection-host connection))
                                :port (connection-port connection)
                                :timeout (connection-connect-timeout connection)))))
 

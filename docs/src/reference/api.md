@@ -150,7 +150,9 @@ definition remains the authoritative list of exported symbols.
 
 - `copy-in` and `copy-out` start their respective COPY operations.
 - `copy-in-start`, `copy-in-write`, `copy-in-abort`, and `copy-in-finish`
-  manage `COPY FROM STDIN` incrementally.
+  manage `COPY FROM STDIN` incrementally. `copy-in-abort` sends PostgreSQL's
+  `CopyFail` message and consumes the expected error before returning the
+  connection to the ready state.
 - `copy-in-write-row` encodes one logical row with the registered codecs,
   while `copy-in-write-text-stream` and `copy-in-write-binary-stream` send
   complete text or binary COPY streams.
@@ -160,7 +162,9 @@ definition remains the authoritative list of exported symbols.
 - `copy-out-read-rows` reads and decodes a complete text or binary stream with
   the registered codecs.
 - `copy-both-start`, `copy-both-write`, `copy-both-read`, and
-  `copy-both-finish` expose the bidirectional COPY flow.
+  `copy-both-finish` expose the bidirectional COPY flow. `copy-both-finish`
+  sends the client `CopyDone` message and drains the server side; there is no
+  `CopyFail` abort message for `COPY BOTH`.
 - `copy-both-write-row`, `copy-both-write-text-stream`, and
   `copy-both-write-binary-stream` provide the same
   encoding helpers for the client-to-server side of COPY BOTH, and
@@ -172,6 +176,10 @@ definition remains the authoritative list of exported symbols.
   boundary, `copy-codecs-row-binary` owns binary row payload codecs,
   `copy-codecs-text-stream` owns text stream framing, and
   `copy-codecs-binary` owns binary COPY stream framing.
+
+`COPY TO STDOUT` has no frontend abort message in PostgreSQL's wire protocol.
+When abandoning it, use `cancel-request` or close/retire the connection rather
+than leaving the operation's backend messages unread.
 
 ### Streaming replication
 

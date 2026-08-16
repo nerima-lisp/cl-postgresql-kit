@@ -100,6 +100,14 @@ JSON, UUID, bit-string, network, array, range, composite, enum, domain, and
 SQL `NULL` handling. The API reference describes the operation-specific
 limits and transport requirements.
 
+COPY follows PostgreSQL's subprotocol boundaries: `copy-in-abort` sends
+`CopyFail` and consumes the expected `ErrorResponse`/`ReadyForQuery` sequence;
+`COPY TO STDOUT` is drained or canceled/closed because the frontend has no
+abort message; and `copy-both-finish` sends the client `CopyDone` and drains
+the remaining server stream. Automatic query cancellation opens a separate
+control connection to the active endpoint and prefers the configured
+`hostaddr` when one is supplied.
+
 ## Transports and platforms
 
 The native socket transport currently provides blocking TCP I/O and readiness

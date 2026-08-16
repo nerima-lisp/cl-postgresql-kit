@@ -10,6 +10,22 @@
       (is (<= effective
               (connection-query-timeout connection))))))
 
+(deftest cancel-transport-prefers-active-hostaddr
+  (with-test-connection
+      (connection
+       (make-connection :host "db.example.test"
+                        :hostaddr "192.0.2.44"
+                        :port 5544
+                        :ssl-mode :disable))
+    (let ((transport (cl-postgresql-kit::%make-cancel-transport connection)))
+      (unwind-protect
+           (progn
+             (is (equal "192.0.2.44"
+                        (cl-postgresql-kit::socket-transport-host transport)))
+             (is (= 5544
+                    (cl-postgresql-kit::socket-transport-port transport))))
+        (transport-close transport)))))
+
 (deftest query-timeout-uses-resilience-deadline-when-unconfigured
   (with-ready-memory-connection ()
     (is (= (cl-postgresql-kit::%effective-query-timeout connection 0.1d0)
