@@ -9,7 +9,7 @@ definition remains the authoritative list of exported symbols.
 ### Create and close connections
 
 - `make-connection` creates a connection object from host, port, database,
-  user, password, timeout, TLS, and transport options.
+  user, password, timeout, TLS, OAuth, and transport options.
 - `make-connection-from-string ""` additionally applies `PG*` environment
   defaults, `PGSERVICE`/`PGSERVICEFILE`, and `PGPASSFILE`/`.pgpass`; direct
   `make-connection` remains an explicit builder.
@@ -22,6 +22,12 @@ definition remains the authoritative list of exported symbols.
 - `:hosts`, `:hostaddrs`, and `:ports` can describe multiple candidate
   endpoints. `:target-session-attrs` filters candidates by their session role;
   `:load-balance-hosts :random` shuffles the candidate order for each connect.
+- Empty entries in those endpoint lists select the platform default host or
+  port 5432, matching PostgreSQL connection-description semantics.
+- `:oauth-token-provider` receives a connection and returns an OAuth token
+  string. `:oauth-discovery-provider` receives a connection and the server's
+  discovery response string, returns a token string, and is used for a fresh
+  startup retry when the server requests OAuth discovery.
 - `:channel-binding` controls SCRAM channel binding with `:disable`, `:prefer`
   (default), or `:require`.
 - `:ssl-negotiation` selects PostgreSQL or direct TLS negotiation;
@@ -29,8 +35,8 @@ definition remains the authoritative list of exported symbols.
   encryption and authentication policy.
 - `:tls-options` passes per-stream `cl+ssl` options such as `:certificate`,
   `:key`, `:password`, `:alpn-protocols`, `:cipher-list`, and `:method`; its
-  `:min-proto-version` limits the TLS protocol floor and `:verify-location`
-  configures a connection-local CA context.
+  `:min-proto-version` and `:max-proto-version` limit the TLS protocol range,
+  while `:verify-location` configures a connection-local CA context.
 - `make-connection-from-string` and `make-connection-from-uri` construct a
   connection from those descriptions.
 - `connect` opens the transport and performs startup and authentication.

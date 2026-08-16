@@ -22,8 +22,8 @@ to hex output before relying on the built-in codec.
 
 Connection strings and URIs cover endpoint selection (`host`, `hostaddr`, and
 `port`), authentication (`user`, `password`, `passfile`, and `database`), TLS
-(`sslmode`, `sslcert`, `sslkey`, `sslpassword`, `sslrootcert`, and
-`ssl_min_protocol_version`), security negotiation (`sslnegotiation`,
+(`sslmode`, `sslcert`, `sslkey`, `sslpassword`, `sslrootcert`,
+`ssl_min_protocol_version`, and `ssl_max_protocol_version`), security negotiation (`sslnegotiation`,
 `gssencmode`, `krbsrvname`, `channel_binding`, and `require_auth`), startup
 parameters (`application_name`, `client_encoding`, `options`, and
 `replication`), and session selection (`target_session_attrs` and
@@ -36,7 +36,10 @@ properties. `PGPASSFILE` or the default passfile can supply a password only
 when no explicit password was provided. On Unix-like systems the default host
 is the PostgreSQL Unix-socket directory; on Windows it is the loopback host.
 `hostaddr` can be used to separate the address used for transport from the
-hostname used for TLS verification.
+hostname used for TLS verification. Empty items in comma-separated host,
+hostaddr, and port lists retain libpq's default semantics: the platform
+default host and port 5432. The same rule applies to empty URI host-list
+items.
 
 ## Authentication
 
@@ -47,14 +50,20 @@ server offers them:
 - MD5 password;
 - SCRAM-SHA-256;
 - SCRAM-SHA-256-PLUS with TLS channel binding; and
-- OAUTHBEARER with TLS and an OAuth token provider.
+- OAUTHBEARER with TLS and either an OAuth token provider or an OAuth
+  discovery provider.
 
-The optional OAuth provider is supplied through the connection options. The
-client rejects cleartext authentication without `:verify-ca` or
-`:verify-full` and rejects OAUTHBEARER without both TLS and a token provider.
-The `:channel-binding` option accepts `:disable`, `:prefer` (the default), and
-`:require`; `:prefer` uses SCRAM-SHA-256-PLUS when TLS channel-binding data is
-available, while `:require` fails when it is unavailable.
+OAuth providers are supplied through the connection options. The token
+provider receives the connection and returns an OAuth token string. The
+discovery provider receives the connection and the server's discovery
+response string, then returns a token string; the client retries startup on a
+new connection with that token. If no suitable provider is configured, the
+client signals an authentication error. The client rejects cleartext
+authentication without `:verify-ca` or `:verify-full` and requires TLS for
+OAUTHBEARER. The `:channel-binding` option accepts `:disable`, `:prefer` (the
+default), and `:require`; `:prefer` uses SCRAM-SHA-256-PLUS when TLS
+channel-binding data is available, while `:require` fails when it is
+unavailable.
 
 ## TLS modes
 
@@ -77,9 +86,11 @@ The native socket transport passes the per-stream `cl+ssl` options `:certificate
 `cl+ssl` context from a pathname, a CL+SSL default location keyword, or a list
 of pathnames. The libpq value `sslrootcert=system` maps to the CL+SSL default
 location and implies `:verify-full` when `sslmode` is omitted.
-The TLS minimum version can be set with `:min-proto-version` or the
-`ssl_min_protocol_version` connection parameter, using TLS 1.0 through TLS
-1.3. With `sslnegotiation=direct`, the connection requires an encrypting TLS
+The TLS minimum and maximum versions can be set with `:min-proto-version` and
+`:max-proto-version`, or the `ssl_min_protocol_version` and
+`ssl_max_protocol_version` connection parameters, using TLS 1.0 through TLS
+1.3. The maximum cannot be lower than the minimum. With
+`sslnegotiation=direct`, the connection requires an encrypting TLS
 mode and advertises PostgreSQL's direct-TLS ALPN protocol. The native socket
 transport does not expose TLS channel-binding bytes, so applications that
 require SCRAM-SHA-256-PLUS must provide a transport implementation that
@@ -118,9 +129,10 @@ deterministic protocol tests and does not model a live server or network.
 
 ## Test boundary
 
-The ASDF test system exercises framing, authentication helpers, typed values,
-SQL `NULL`, conditions, pooling, cancellation, COPY, pipelines, replication,
-and result limits through in-memory transport. It does not prove
+The ASDF test system exercises framing, authentication helpers including the
+OAuth discovery exchange, typed values, SQL `NULL`, conditions, pooling,
+cancellation, COPY, pipelines, replication, and result limits through
+in-memory transport. It does not prove
 interoperability with a running PostgreSQL server, a particular server
 version, a real DNS/socket environment, or a TLS implementation.
 

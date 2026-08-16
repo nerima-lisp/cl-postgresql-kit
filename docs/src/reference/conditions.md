@@ -12,6 +12,7 @@ postgresql-condition
 │   ├── transport-error
 │   ├── connection-error
 │   │   ├── authentication-error
+│   │   │   └── oauth-discovery-required
 │   │   └── tls-error
 │   ├── query-error
 │   │   ├── multiple-results-error
@@ -40,6 +41,8 @@ message. The more specific readers are:
 - `transport-error-operation` and `transport-error-cause` identify the failed
   transport operation and underlying cause.
 - `tls-error-cause` exposes the TLS-layer cause.
+- `oauth-discovery-response` returns the server's OAuth discovery response
+  string, and `oauth-discovery-server-fields` returns its parsed error fields.
 - `timeout-error-cancel-sent-p` and
   `timeout-error-connection-retired-p` record timeout cleanup outcomes.
 - `pool-exhausted-timeout` records the acquisition timeout that was exceeded.

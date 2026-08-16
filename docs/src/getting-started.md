@@ -60,6 +60,14 @@ For failover or read-scaling, pass multiple hosts with `:hosts` (and matching
 session role, or `:load-balance-hosts :random` to randomize the candidate order
 on each connection attempt.
 
+For OAuth, `:oauth-token-provider` supplies an already obtained token by
+returning a string for the connection. When the server requests OAuth
+discovery, `:oauth-discovery-provider` receives the connection and the raw
+discovery response string and returns the token string; the client then opens
+a fresh startup connection and retries authentication. If neither provider
+is configured, OAUTHBEARER authentication fails with an authentication
+condition.
+
 ## Choose TLS behavior
 
 The `:ssl-mode` option accepts `:disable`, `:allow`, `:prefer`, `:require`,
@@ -103,11 +111,13 @@ Options accepted by the optional `cl+ssl` integration can be supplied through
 ```
 
 Supported keys are `:certificate`, `:key`, `:password`, `:alpn-protocols`,
-`:cipher-list`, `:method`, `:min-proto-version`, and `:verify-location`. The
-minimum protocol key accepts `:tlsv1`, `:tlsv1-1`, `:tlsv1-2`, or `:tlsv1-3`;
-the connection-string spelling is `ssl_min_protocol_version`. The last accepts a
-pathname/string, `:default`, `:default-file`, `:default-dir`, or a list of
-pathnames. The connection-string form `sslrootcert=system` selects `:default`
+`:cipher-list`, `:method`, `:min-proto-version`, `:max-proto-version`, and
+`:verify-location`. The protocol keys accept `:tlsv1`, `:tlsv1-1`, `:tlsv1-2`,
+or `:tlsv1-3`; their connection-string spellings are
+`ssl_min_protocol_version` and `ssl_max_protocol_version`. The maximum must be
+at least the minimum. `:verify-location` accepts a pathname/string,
+`:default`, `:default-file`, `:default-dir`, or a list of pathnames. The
+connection-string form `sslrootcert=system` selects `:default`
 and implies `sslmode=verify-full` when no sslmode is supplied.
 
 ## Read results safely

@@ -13,7 +13,8 @@
 - `t/` contains the self-contained protocol and client tests, split by
   concern (`connection-string-tests.lisp`, `connection-startup-tests.lisp`,
   `connection-tests.lisp`,
-  `connection-auth-tests.lisp`, `query-tests.lisp`,
+  `connection-auth-tests.lisp`, `connection-auth-oauth-tests.lisp`,
+  `query-tests.lisp`,
   `query-pipeline-tests.lisp`, `protocol-codec-array-tests.lisp`,
   `network-codec-tests.lisp`,
   `type-registry-tests.lisp`, `temporal-binary-codec-tests.lisp`,
