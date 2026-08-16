@@ -16,6 +16,7 @@
     (ignore-errors (transport-close (connection-transport connection)))
   (%clear-connection-session-state connection)
     (%clear-connection-secrets connection)
+    (%clear-connection-oauth-state connection)
     (setf (connection-open connection) nil
           (connection-state connection) :closed
           (connection--initial-transport-used-p connection) nil)

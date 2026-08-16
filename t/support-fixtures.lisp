@@ -2,6 +2,7 @@
 
 (defun ready-memory-connection (&key input on-write password
                                       oauth-token-provider
+                                      oauth-discovery-provider
                                       gss-token-provider
                                       sspi-token-provider
                                       cancel-transport-factory
@@ -15,10 +16,12 @@
     (let ((connection (make-connection :transport transport
                                        :ssl-mode ssl-mode
                                        :require-auth require-auth
-                                       :password password
-                                       :oauth-token-provider
-                                       oauth-token-provider
-                                       :gss-token-provider
+                                        :password password
+                                        :oauth-token-provider
+                                        oauth-token-provider
+                                        :oauth-discovery-provider
+                                        oauth-discovery-provider
+                                        :gss-token-provider
                                        gss-token-provider
                                        :sspi-token-provider
                                        sspi-token-provider
@@ -109,12 +112,14 @@ to override message details when needed."
                                               (ssl-mode :verify-full)
                                               tls-established-p
                                               (oauth-token-provider
-                                                #'oauthbearer-test-token))
+                                                #'oauthbearer-test-token)
+                                              oauth-discovery-provider)
   (let ((connection
           (ready-memory-connection
            :input input
            :ssl-mode ssl-mode
-           :oauth-token-provider oauth-token-provider)))
+           :oauth-token-provider oauth-token-provider
+           :oauth-discovery-provider oauth-discovery-provider)))
     (when tls-established-p
       (setf (connection-tls-established-p connection) t))
     connection))

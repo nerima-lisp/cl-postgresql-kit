@@ -140,6 +140,74 @@
                    (tls-probe-options transport)))
         (is (connection-open connection))))))
 
+(deftest oauthbearer-discovery-reconnects-with-provider-token
+  (let* ((discovery-response
+           "{\"scope\":\"openid\"}")
+         (discovery-error
+           (make-frame
+            #\E
+            (join-octets (octets (char-code #\S))
+                         (cstring "ERROR")
+                         (octets (char-code #\C))
+                         (cstring "28000")
+                         (octets (char-code #\M))
+                         (cstring "OAuth discovery failed")
+                         (octets 0))))
+         (oauth-offer
+           (make-frame
+            #\R
+            (join-octets (octets 0 0 0 10)
+                         (cstring "OAUTHBEARER")
+                         (octets 0))))
+         (oauth-continue
+           (make-frame
+            #\R
+            (join-octets (octets 0 0 0 11)
+                         (cl-codec-kit:string-to-octets discovery-response
+                                                         :encoding :utf-8))))
+         (oauth-final (make-frame #\R (octets 0 0 0 12)))
+         (ready (make-frame #\Z (octets (char-code #\I))))
+         (startup-count 0)
+         (callback-response nil))
+    (with-recording-probe-transport
+        (transport writes
+         :on-write
+         (lambda (transport octets)
+           (cond
+             ((equalp octets (encode-ssl-request))
+              (memory-transport-append-input
+               transport
+               (octets (char-code #\S))))
+             ((and (plusp (length octets))
+                   (zerop (aref octets 0)))
+              (incf startup-count)
+              (memory-transport-append-input
+               transport
+               (if (= startup-count 1)
+                   (join-octets oauth-offer oauth-continue discovery-error)
+                   (join-octets oauth-offer oauth-final ready)))))))
+      (with-open-test-connection
+          (connection
+            (make-connection
+             :user "alice"
+             :transport transport
+             :ssl-mode :require
+             :oauth-token-provider nil
+             :oauth-discovery-provider
+             (lambda (ignored response)
+               (declare (ignore ignored))
+               (setf callback-response response)
+               "discovered-token")))
+        (connect connection)
+        (is (= 2 startup-count))
+        (is (string= discovery-response callback-response))
+        (is (connection-open connection))
+        (is (not (null
+                  (search (cl-codec-kit:string-to-octets
+                           "Bearer discovered-token")
+                          (memory-transport-output transport)))))
+        (is (= 7 (length writes)))))))
+
 (defclass failing-tls-probe-transport (tls-probe-transport) ())
 
 (defmethod transport-start-tls ((transport failing-tls-probe-transport)

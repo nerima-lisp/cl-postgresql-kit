@@ -151,7 +151,8 @@
           (%note-authentication-method connection :scram-sha-256)
           (%authenticate-scram connection))
          ((and oauth-offered-p oauth-allowed-p
-               (connection-oauth-token-provider connection))
+               (or (connection-oauth-token-provider connection)
+                   (connection-oauth-discovery-provider connection)))
           (%note-authentication-method connection :oauth)
           (%authenticate-oauthbearer connection))
          (t

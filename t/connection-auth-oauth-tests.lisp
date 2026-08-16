@@ -11,6 +11,74 @@
            (assert-oauthbearer-output connection))
       (disconnect connection))))
 
+(deftest oauthbearer-discovery-challenge
+  (let* ((discovery-response
+           "{\"scope\":\"openid\"}")
+         (discovery-error
+           (make-frame
+            #\E
+            (join-octets (octets (char-code #\S))
+                         (cstring "ERROR")
+                         (octets (char-code #\C))
+                         (cstring "28000")
+                         (octets (char-code #\M))
+                         (cstring "OAuth discovery failed")
+                         (octets 0))))
+         (provider-called-p nil)
+         (connection
+           (make-oauthbearer-test-connection
+            :input
+            (join-octets
+             (make-frame
+              #\R
+              (join-octets
+               (octets 0 0 0 10)
+               (cstring "OAUTHBEARER")
+               (octets 0)))
+             (make-frame
+              #\R
+              (join-octets
+               (octets 0 0 0 11)
+               (cl-codec-kit:string-to-octets discovery-response
+                                               :encoding :utf-8)))
+             discovery-error)
+            :oauth-token-provider nil
+            :oauth-discovery-provider
+            (lambda (ignored response)
+              (declare (ignore ignored response))
+              (setf provider-called-p t)
+              "unused")
+            :tls-established-p t)))
+    (unwind-protect
+         (let ((condition
+                 (handler-case
+                     (progn
+                       (cl-postgresql-kit::%authenticate-oauthbearer connection)
+                       nil)
+                   (oauth-discovery-required (condition)
+                     condition))))
+           (is (typep condition 'oauth-discovery-required))
+           (is (string= discovery-response
+                        (oauth-discovery-response condition)))
+           (is (equal "28000"
+                      (cdr (assoc :sqlstate
+                                  (oauth-discovery-server-fields condition)))))
+           (is (equal "OAuth discovery failed"
+                      (cdr (assoc :message
+                                  (oauth-discovery-server-fields condition)))))
+           (is (not provider-called-p))
+           (is (equalp
+                (memory-transport-output (connection-transport connection))
+                (join-octets
+                 (encode-sasl-initial-response
+                  "OAUTHBEARER"
+                  (format nil "n,,~Cauth=~C~C"
+                          (code-char 1)
+                          (code-char 1)
+                          (code-char 1)))
+                 (encode-sasl-response (string (code-char 1)))))))
+      (disconnect connection))))
+
 (deftest oauthbearer-authentication-boundaries
   (it-signals-each 'authentication-error
       ((:missing-oauth-provider)

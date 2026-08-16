@@ -23,6 +23,13 @@
 
 (define-condition connection-error (postgresql-error) ())
 (define-condition authentication-error (connection-error) ())
+(define-condition oauth-discovery-required (authentication-error)
+  ((response :initarg :response
+             :reader oauth-discovery-response
+             :initform nil)
+   (server-fields :initarg :server-fields
+                  :reader oauth-discovery-server-fields
+                  :initform nil)))
 (define-condition query-error (postgresql-error) ())
 (define-condition multiple-results-error (query-error) ())
 (define-condition timeout-error (postgresql-error)

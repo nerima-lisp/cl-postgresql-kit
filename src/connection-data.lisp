@@ -7,10 +7,19 @@
    (user :initarg :user :reader connection-user)
    (password :initarg :password :accessor connection-password)
    (passfile :initarg :passfile :reader connection-passfile :initform nil)
-   (oauth-token-provider :initarg :oauth-token-provider
-                         :accessor connection-oauth-token-provider
-                         :initform nil)
-   (database :initarg :database :reader connection-database)
+    (oauth-token-provider :initarg :oauth-token-provider
+                          :accessor connection-oauth-token-provider
+                          :initform nil)
+    (oauth-discovery-provider :initarg :oauth-discovery-provider
+                              :accessor connection-oauth-discovery-provider
+                              :initform nil)
+    (oauth-discovery-response :initform nil
+                              :accessor connection--oauth-discovery-response)
+    (oauth-discovery-active-p :initform nil
+                              :accessor connection--oauth-discovery-active-p)
+    (oauth-discovery-token :initform nil
+                           :accessor connection--oauth-discovery-token)
+    (database :initarg :database :reader connection-database)
    (application-name :initarg :application-name :reader connection-application-name)
    (startup-parameters :initarg :startup-parameters
                        :reader connection-startup-parameters

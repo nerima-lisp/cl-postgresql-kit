@@ -78,6 +78,7 @@
 (defun make-connection (&key (host "127.0.0.1" host-supplied-p) hosts hostaddr hostaddrs
                               (port 5432) ports user password passfile
                               oauth-token-provider
+                              oauth-discovery-provider
                               database (application-name "cl-postgresql-kit")
                               startup-parameters (ssl-mode :disable)
                               (ssl-negotiation :postgres)
@@ -104,6 +105,7 @@ connection attempt."
   (check-type host string)
   (check-type port (integer 1 65535))
   (check-type oauth-token-provider (or null function))
+  (check-type oauth-discovery-provider (or null function))
   (check-type passfile (or null string pathname))
   (unless (%supported-protocol-version-p protocol-version)
     (error 'parameter-error
@@ -170,9 +172,10 @@ connection attempt."
                      :port (getf first-endpoint :port)
                      :user user
                      :password resolved-password
-                     :passfile passfile
-                     :oauth-token-provider oauth-token-provider
-                     :database database
+                      :passfile passfile
+                      :oauth-token-provider oauth-token-provider
+                      :oauth-discovery-provider oauth-discovery-provider
+                      :database database
                      :application-name application-name
                    :startup-parameters
                      (%normalize-startup-parameters startup-parameters)
@@ -254,7 +257,15 @@ connection attempt."
         (connection--authentication-method connection) nil
         (connection--authentication-requested-p connection) nil
         (connection--authentication-observed-method connection) nil
+        (connection--oauth-discovery-response connection) nil
+        (connection--oauth-discovery-active-p connection) nil
         (connection-transaction-status connection) :idle)
+  connection)
+
+(defun %clear-connection-oauth-state (connection)
+  (setf (connection--oauth-discovery-token connection) nil
+        (connection--oauth-discovery-response connection) nil
+        (connection--oauth-discovery-active-p connection) nil)
   connection)
 
 (defun %octets-to-lower-hex (octets)

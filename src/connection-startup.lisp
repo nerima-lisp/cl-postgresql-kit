@@ -18,6 +18,7 @@
   (ignore-errors (transport-close (connection-transport connection)))
   (%clear-connection-session-state connection)
   (%clear-connection-secrets connection)
+  (%clear-connection-oauth-state connection)
   (setf (connection-open connection) nil
         (connection-state connection) :failed
         (connection--initial-transport-used-p connection) nil)
@@ -90,6 +91,19 @@
                            :host (connection-host connection)
                            :port (connection-port connection))
           connection)
+      (oauth-discovery-required (condition)
+        (let ((provider (connection-oauth-discovery-provider connection)))
+          (unless (functionp provider)
+            (error condition))
+          (let ((token (funcall provider
+                                connection
+                                (oauth-discovery-response condition))))
+            (unless (stringp token)
+              (error 'authentication-error
+                     :message "OAuth discovery provider must return a string."))
+            (setf (connection--oauth-discovery-token connection) token)
+            (%connect-reset-for-retry connection)
+            (%connect-attempt connection request-ssl-p))))
       (error (condition)
         (if (%connect-ssl-fallback-p connection condition request-ssl-p
                                      ssl-server-rejected-p
@@ -101,6 +115,7 @@
             (error condition))))))
 
 (defun %connect-endpoint (connection endpoint index)
+  (%clear-connection-oauth-state connection)
   (%activate-connection-endpoint connection endpoint index)
   (%connect-attempt connection (%connect-request-ssl-p connection)))
 
@@ -130,6 +145,7 @@
                (plusp (length (connection-user connection))))
     (error 'connection-error :message "A PostgreSQL user is required."))
   (%clear-connection-session-state connection)
+  (%clear-connection-oauth-state connection)
   (setf (connection-state connection) :connecting
         (connection-tls-established-p connection) nil
         (connection-gss-established-p connection) nil)

@@ -15,6 +15,9 @@
    #:transport-error-cause
    #:connection-error
    #:authentication-error
+   #:oauth-discovery-required
+   #:oauth-discovery-response
+   #:oauth-discovery-server-fields
    #:query-error
    #:multiple-results-error
    #:timeout-error
@@ -410,6 +413,7 @@
    #:connection-password
    #:connection-passfile
    #:connection-oauth-token-provider
+   #:connection-oauth-discovery-provider
    #:connection-gss-token-provider
    #:connection-sspi-token-provider
    #:connection-ssl-mode
