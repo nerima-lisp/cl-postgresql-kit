@@ -90,7 +90,7 @@
                                (postgres-range-upper value))))
          (write-char (if (postgres-range-upper-inclusive value) #\] #\)) stream)))))
 
-(defun %split-multirange-text (string)
+(defun %split-multirange-text (string &optional (maximum-items *maximum-array-elements*))
   (let* ((string (%type-trim string))
          (length (length string))
          (limit (1- length))
@@ -146,6 +146,8 @@
                     (invalid "PostgreSQL multirange range item is unterminated"))
                   (unless closed-p
                     (invalid "PostgreSQL multirange range item has no closing delimiter")))
+                (when (>= (length items) maximum-items)
+                  (invalid "PostgreSQL multirange has too many ranges"))
                 (push (subseq string start position) items))
               (let ((token-start position))
                 (loop while (and (< position limit)
@@ -301,6 +303,12 @@
       (error 'protocol-error
              :message "PostgreSQL multirange range count is negative"
              :context :multirange :actual range-count))
+    (when (> range-count *maximum-array-elements*)
+      (error 'protocol-error
+             :message "PostgreSQL multirange has too many ranges"
+             :context :multirange
+             :expected *maximum-array-elements*
+             :actual range-count))
     (let ((ranges nil)
           (length (length octets)))
       (loop repeat range-count

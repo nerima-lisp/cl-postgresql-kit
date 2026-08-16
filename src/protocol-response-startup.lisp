@@ -9,6 +9,9 @@
       (3 (progn
            (%ensure-payload-end payload position :authentication)
            (list :type :cleartext-password)))
+      (2 (progn
+           (%ensure-payload-end payload position :authentication)
+           (list :type :kerberos-v5 :data #())))
       (5
        (%with-payload-slice (salt end payload position 4
                                    :authentication
@@ -48,7 +51,7 @@
                                                      :encoding :utf-8)))
       (otherwise
        (error 'protocol-error :message "Unsupported PostgreSQL authentication request"
-              :context :authentication :expected '(0 3 5 7 8 9 10 11 12) :actual code)))))
+              :context :authentication :expected '(0 2 3 5 7 8 9 10 11 12) :actual code)))))
 
 (defun parse-parameter-status (payload)
   (multiple-value-bind (name position) (%read-cstring payload 0)

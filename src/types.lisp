@@ -1,5 +1,9 @@
 (in-package #:cl-postgresql-kit)
 
+(defparameter *maximum-array-dimensions* 6)
+(defparameter *maximum-array-elements* 1000000)
+(defparameter *maximum-numeric-digits* 100000)
+
 (defun register-type (registry &key codec oid name text-decoder text-encoder
                                binary-decoder binary-encoder)
   (check-type registry type-registry)
@@ -164,6 +168,9 @@
   (let ((ranges (%copy-type-definition-vector
                  ranges :ranges
                  "PostgreSQL multirange ranges must be a list or vector")))
+    (when (> (length ranges) *maximum-array-elements*)
+      (error 'parameter-error :parameter ranges
+             :message "PostgreSQL multirange has too many ranges"))
     (loop for range across ranges
           do (unless (postgres-range-p range)
                (error 'parameter-error :parameter range
@@ -199,7 +206,3 @@
     (loop for oid across result
           do (%ensure-type-definition-oid oid parameter))
     result))
-
-(defparameter *maximum-array-dimensions* 6)
-(defparameter *maximum-array-elements* 1000000)
-(defparameter *maximum-numeric-digits* 100000)

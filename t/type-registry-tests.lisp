@@ -72,6 +72,32 @@
                          (postgres-array-elements value)))))
       (disconnect connection))))
 
+(deftest dynamic-type-registry-catalog-row-limit
+  (let* ((response
+           (catalog-query-input
+            '(("oid" 20 8) ("typname" 25 -1) ("enumlabel" 25 -1))
+            '(("8000" "mood" "sad")
+              ("8000" "mood" "happy"))))
+         (query-index 0)
+         (connection
+           (ready-memory-connection
+            :on-write
+            (lambda (transport octets)
+              (when (and (plusp (length octets))
+                         (= (aref octets 0) (char-code #\Q)))
+                (is (= query-index 0))
+                (memory-transport-append-input transport response)
+                (incf query-index))))))
+    (unwind-protect
+         (progn
+           (let ((cl-postgresql-kit::*maximum-type-registry-catalog-rows* 1))
+             (assert-signals
+              'query-error
+              (lambda () (load-type-registry connection))))
+           (is (= 1 query-index))
+           (is (not (connection-open connection))))
+      (disconnect connection))))
+
 (deftest dynamic-multirange-type-registry-loading
   (let* ((registry (make-type-registry))
          (responses

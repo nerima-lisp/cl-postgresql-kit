@@ -23,6 +23,34 @@
     (setf (slot-value transport 'tls-options) nil))
   transport)
 
+(defun %socket-transport-local-p (transport)
+  (let ((host (socket-transport-host transport)))
+    (and (stringp host)
+         (plusp (length host))
+         (char= #\/ (char host 0)))))
+
+(defun %socket-transport-local-path (transport)
+  (let ((directory (string-right-trim "/" (socket-transport-host transport))))
+    (format nil "~A/.s.PGSQL.~D"
+            directory
+            (socket-transport-port transport))))
+
+(defun %socket-transport-connect-timeout (transport)
+  (let ((timeout (socket-transport-timeout transport)))
+    (and timeout (plusp timeout) timeout)))
+
+#+sbcl
+(defun %socket-transport-host-addresses (host)
+  (multiple-value-bind (ipv4-host-ent ipv6-host-ent)
+      (sb-bsd-sockets:get-host-by-name host)
+    (remove-duplicates
+     (remove nil
+             (list (and ipv4-host-ent
+                        (sb-bsd-sockets:host-ent-address ipv4-host-ent))
+                   (and ipv6-host-ent
+                        (sb-bsd-sockets:host-ent-address ipv6-host-ent))))
+     :test #'equalp)))
+
 #+sbcl
 (defmethod transport-open ((transport socket-transport))
   (when (transport-alive-p transport)
@@ -34,41 +62,58 @@
         (unwind-protect
              (progn
                (require :sb-bsd-sockets)
-               (multiple-value-bind (ipv4-host-ent ipv6-host-ent)
-                   (sb-bsd-sockets:get-host-by-name
-                    (socket-transport-host transport))
-                 (let* ((ipv4-address
-                          (and ipv4-host-ent
-                               (sb-bsd-sockets:host-ent-address ipv4-host-ent)))
-                        (ipv6-address
-                          (and ipv6-host-ent
-                               (sb-bsd-sockets:host-ent-address ipv6-host-ent)))
-                        ;; SBCL returns the IPv6 HOST-ENT as a second value.
-                        ;; Keep IPv4 as the first choice for existing hostnames,
-                        ;; while allowing an IPv6 literal or IPv6-only hostname.
-                        (address (or ipv4-address ipv6-address)))
-                   (unless address
-                     (error "The host resolved without a usable address."))
-                   (setf socket
-                         (make-instance
-                          (if (= (length address) 16)
-                              'sb-bsd-sockets:inet6-socket
-                              'sb-bsd-sockets:inet-socket)
-                          :type :stream :protocol :tcp))
-                   (if (socket-transport-timeout transport)
-                       (cl-concurrent-kit:with-timeout
-                           (cl-date-kit:duration-of-nanos
-                            (round (* (socket-transport-timeout transport)
-                                      1000000000)))
+               (if (%socket-transport-local-p transport)
+                   (progn
+                     (setf socket
+                           (make-instance 'sb-bsd-sockets:local-socket
+                                          :type :stream))
+                     (if (%socket-transport-connect-timeout transport)
+                         (cl-concurrent-kit:with-timeout
+                             (cl-date-kit:duration-of-nanos
+                              (round (* (%socket-transport-connect-timeout transport)
+                                        1000000000)))
+                           (sb-bsd-sockets:socket-connect
+                            socket (%socket-transport-local-path transport)))
                          (sb-bsd-sockets:socket-connect
-                          socket address (socket-transport-port transport)))
-                       (sb-bsd-sockets:socket-connect
-                        socket address (socket-transport-port transport)))))
+                          socket (%socket-transport-local-path transport))))
+                   (let ((addresses
+                           (%socket-transport-host-addresses
+                            (socket-transport-host transport)))
+                         (last-error nil))
+                     (unless addresses
+                       (error "The host resolved without a usable address."))
+                     (dolist (address addresses)
+                       (handler-case
+                           (progn
+                             (setf socket
+                                   (make-instance
+                                    (if (= (length address) 16)
+                                        'sb-bsd-sockets:inet6-socket
+                                        'sb-bsd-sockets:inet-socket)
+                                    :type :stream :protocol :tcp))
+                             (if (%socket-transport-connect-timeout transport)
+                                 (cl-concurrent-kit:with-timeout
+                                     (cl-date-kit:duration-of-nanos
+                                      (round (* (%socket-transport-connect-timeout transport)
+                                                1000000000)))
+                                   (sb-bsd-sockets:socket-connect
+                                    socket address (socket-transport-port transport)))
+                                 (sb-bsd-sockets:socket-connect
+                                  socket address (socket-transport-port transport)))
+                             (return))
+                         (error (condition)
+                           (setf last-error condition)
+                           (ignore-errors (sb-bsd-sockets:socket-close socket))
+                           (setf socket nil))))
+                     (unless socket
+                       (if last-error
+                           (error last-error)
+                           (error "Unable to connect to any resolved host address.")))))
                (setf stream
                      (sb-bsd-sockets:socket-make-stream
-                      socket :input t :output t
+                     socket :input t :output t
                       :element-type '(unsigned-byte 8)
-                      :timeout (socket-transport-timeout transport)))
+                      :timeout nil))
                (setf (socket-transport-socket transport) socket
                      (socket-transport-stream transport) stream)
                (prog1 (call-next-method)

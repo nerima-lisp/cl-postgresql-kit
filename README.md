@@ -16,12 +16,7 @@ notes, and development instructions.
 (asdf:load-system "cl-postgresql-kit")
 
 (let ((connection
-        (cl-postgresql-kit:make-connection
-         :host (or (uiop:getenv "PGHOST") "127.0.0.1")
-         :port (parse-integer (or (uiop:getenv "PGPORT") "5432"))
-         :database (uiop:getenv "PGDATABASE")
-         :user (uiop:getenv "PGUSER")
-         :password (uiop:getenv "PGPASSWORD"))))
+        (cl-postgresql-kit:make-connection-from-string "")))
   (unwind-protect
        (progn
          (cl-postgresql-kit:connect connection)
@@ -29,6 +24,11 @@ notes, and development instructions.
            (cl-postgresql-kit:result-rows result)))
     (cl-postgresql-kit:disconnect connection)))
 ```
+
+`make-connection-from-string` applies libpq-style defaults: `PG*` environment
+variables, `PGSERVICE`/`PGSERVICEFILE`, and `PGPASSFILE`/`.pgpass` when an
+explicit password is not supplied. Direct `make-connection` is the explicit
+builder and does not read those environment or service-file defaults.
 
 `query` returns a result object with column metadata, a command tag, and
 decoded rows. SQL `NULL` is represented by the exported `+sql-null+` singleton.

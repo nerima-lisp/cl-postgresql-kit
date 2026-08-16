@@ -6,6 +6,7 @@
    (port :initarg :port :accessor connection-port)
    (user :initarg :user :reader connection-user)
    (password :initarg :password :accessor connection-password)
+   (passfile :initarg :passfile :reader connection-passfile :initform nil)
    (oauth-token-provider :initarg :oauth-token-provider
                          :accessor connection-oauth-token-provider
                          :initform nil)
@@ -20,12 +21,24 @@
    (negotiated-protocol-version :initform nil
                                 :accessor connection-negotiated-protocol-version)
    (ssl-mode :initarg :ssl-mode :reader connection-ssl-mode)
+   (ssl-negotiation :initarg :ssl-negotiation
+                    :reader connection-ssl-negotiation
+                    :initform :postgres)
    (tls-options :initarg :tls-options
                 :reader connection-tls-options
                 :initform nil)
+   (gssenc-mode :initarg :gssenc-mode
+                :reader connection-gssenc-mode
+                :initform :prefer)
+   (gss-service-name :initarg :gss-service-name
+                     :reader connection-gss-service-name
+                     :initform "postgres")
    (channel-binding :initarg :channel-binding
                     :reader connection-channel-binding
                     :initform :prefer)
+   (require-auth :initarg :require-auth
+                 :reader connection-require-auth
+                 :initform nil)
    (target-session-attrs :initarg :target-session-attrs
                          :reader connection-target-session-attrs
                          :initform :any)
@@ -40,7 +53,12 @@
                         :initform nil)
    (authentication-method :initform nil
                           :accessor connection--authentication-method)
+   (authentication-requested-p :initform nil
+                               :accessor connection--authentication-requested-p)
+   (authentication-observed-method :initform nil
+                                   :accessor connection--authentication-observed-method)
    (tls-established-p :initform nil :accessor connection-tls-established-p)
+   (gss-established-p :initform nil :accessor connection-gss-established-p)
    (transport :initarg :transport :accessor connection-transport)
    (endpoints :initarg :endpoints :reader connection--endpoints)
    (initial-transport :initarg :initial-transport

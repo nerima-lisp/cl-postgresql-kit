@@ -44,14 +44,49 @@
   "Return the backend secret key advertised during startup."
   (connection-backend-secret-key connection))
 
+(defun %connection-direct-passfile-password (endpoints user database passfile)
+  (let ((parameters
+          (list (cons "host"
+                      (format nil "~{~A~^,~}"
+                              (remove-duplicates
+                               (mapcar (lambda (endpoint)
+                                         (getf endpoint :host))
+                                       endpoints)
+                               :test #'string=)))
+                (cons "hostaddr"
+                      (format nil "~{~A~^,~}"
+                              (remove-duplicates
+                               (mapcar (lambda (endpoint)
+                                         (getf endpoint :hostaddr))
+                                       endpoints)
+                               :test #'string=)))
+                (cons "port"
+                      (format nil "~{~A~^,~}"
+                              (mapcar (lambda (endpoint)
+                                        (getf endpoint :port))
+                                      endpoints)))
+                (cons "user" (or user ""))
+                (cons "database" (or database "")))))
+    (when passfile
+      (push (cons "passfile"
+                  (if (pathnamep passfile)
+                      (namestring passfile)
+                      passfile))
+            parameters))
+    (nth-value 1 (%connection-passfile-password parameters))))
+
 (defun make-connection (&key (host "127.0.0.1" host-supplied-p) hosts hostaddr hostaddrs
-                              (port 5432) ports user password
+                              (port 5432) ports user password passfile
                               oauth-token-provider
                               database (application-name "cl-postgresql-kit")
                               startup-parameters (ssl-mode :disable)
+                              (ssl-negotiation :postgres)
+                              (gssenc-mode :prefer)
+                              (gss-service-name "postgres")
                               (protocol-version +protocol-version-3.0+)
                               tls-options
                               channel-binding
+                              require-auth
                               target-session-attrs load-balance-hosts
                               gss-token-provider sspi-token-provider
                               transport transport-factory logger metric-registry
@@ -69,6 +104,7 @@ connection attempt."
   (check-type host string)
   (check-type port (integer 1 65535))
   (check-type oauth-token-provider (or null function))
+  (check-type passfile (or null string pathname))
   (unless (%supported-protocol-version-p protocol-version)
     (error 'parameter-error
            :parameter protocol-version
@@ -81,16 +117,39 @@ connection attempt."
   (check-type metric-registry (or null cl-observability-kit:metric-registry))
   (check-type ssl-mode
               (member :disable :allow :prefer :require :verify-ca :verify-full))
+  (check-type ssl-negotiation (member :postgres :direct))
+  (check-type gssenc-mode (member :disable :prefer :require))
+  (check-type gss-service-name string)
+  (when (and (eq ssl-negotiation :direct)
+             (not (member ssl-mode '(:require :verify-ca :verify-full)
+                          :test #'eq)))
+    (error 'parameter-error
+           :parameter :ssl-negotiation
+           :message "Direct SSL negotiation requires sslmode=require, verify-ca, or verify-full."))
   (check-type query-timeout (or null (real 0 *)))
   (check-type connect-timeout (or null (real 0 *)))
   (check-type max-notifications (integer 0 *))
-  (let* ((normalized-tls-options (%normalize-tls-options tls-options))
+  (let* ((base-tls-options (%normalize-tls-options tls-options))
+         (normalized-tls-options
+           (if (eq ssl-negotiation :direct)
+               (let ((options (copy-list base-tls-options)))
+                 (unless (member "postgresql" (getf options :alpn-protocols)
+                                 :test #'string=)
+                   (setf (getf options :alpn-protocols)
+                         (append (getf options :alpn-protocols)
+                                 (list "postgresql"))))
+                 options)
+               base-tls-options))
          (endpoints (%make-connection-endpoints
                      :host host :hosts hosts
                      :hostaddr hostaddr :hostaddrs hostaddrs
                      :port port :ports ports
                      :host-supplied-p host-supplied-p))
-         (first-endpoint (first endpoints)))
+         (first-endpoint (first endpoints))
+         (resolved-password
+           (or password
+               (%connection-direct-passfile-password
+                endpoints user database passfile))))
     (when (and transport
                (> (length endpoints) 1)
                (null transport-factory))
@@ -110,7 +169,8 @@ connection attempt."
                      :hostaddr (getf first-endpoint :hostaddr)
                      :port (getf first-endpoint :port)
                      :user user
-                     :password password
+                     :password resolved-password
+                     :passfile passfile
                      :oauth-token-provider oauth-token-provider
                      :database database
                      :application-name application-name
@@ -118,9 +178,14 @@ connection attempt."
                      (%normalize-startup-parameters startup-parameters)
                      :protocol-version protocol-version
                      :ssl-mode ssl-mode
+                     :ssl-negotiation ssl-negotiation
                      :tls-options normalized-tls-options
+                     :gssenc-mode gssenc-mode
+                     :gss-service-name gss-service-name
                      :channel-binding
                      (%normalize-channel-binding channel-binding)
+                     :require-auth
+                     (%normalize-require-auth require-auth)
                      :target-session-attrs
                      (%normalize-target-session-attrs target-session-attrs)
                      :load-balance-hosts
@@ -168,7 +233,8 @@ connection attempt."
         (slot-value connection 'tls-options) nil
         (connection-backend-process-id connection) nil
         (connection-backend-secret-key connection) nil
-        (connection-tls-established-p connection) nil)
+        (connection-tls-established-p connection) nil
+        (connection-gss-established-p connection) nil)
   (%clear-transport-tls-options (connection-transport connection))
   (%clear-transport-tls-options (connection--initial-transport connection))
   connection)
@@ -186,6 +252,8 @@ connection attempt."
         (connection-last-result connection) nil
         (connection-negotiated-protocol-version connection) nil
         (connection--authentication-method connection) nil
+        (connection--authentication-requested-p connection) nil
+        (connection--authentication-observed-method connection) nil
         (connection-transaction-status connection) :idle)
   connection)
 

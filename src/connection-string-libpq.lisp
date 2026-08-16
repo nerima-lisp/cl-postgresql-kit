@@ -3,8 +3,11 @@
 (defparameter *connection-string-supported-parameters*
   '("application_name" "client_encoding" "connect_timeout" "database"
     "dbname" "fallback_application_name" "host" "hostaddr" "options"
-    "password" "port" "replication" "sslcert" "sslkey" "sslmode"
-    "sslpassword" "sslrootcert" "channel_binding"
+    "password" "passfile" "port" "replication" "service"
+    "sslcert" "sslkey" "sslmode"
+    "sslpassword" "sslrootcert" "ssl_min_protocol_version"
+    "sslnegotiation" "gssencmode"
+    "krbsrvname" "channel_binding" "require_auth"
     "target_session_attrs"
     "load_balance_hosts" "user"))
 
@@ -92,6 +95,81 @@
                   ("prefer" :prefer)
                   ("require" :require))
    :message "CHANNEL-BINDING must be DISABLE, PREFER, or REQUIRE."))
+
+(defparameter *require-auth-method-values*
+  '(("password" :password)
+    ("md5" :md5)
+    ("gss" :gss)
+    ("sspi" :sspi)
+    ("scram-sha-256" :scram-sha-256)
+    ("oauth" :oauth)
+    ("none" :none)))
+
+(defun %require-auth-method-p (method)
+  (member method
+          (mapcar #'second *require-auth-method-values*)
+          :test #'eq))
+
+(defun %normalized-require-auth-p (value)
+  (and (%proper-list-p value)
+       (member (getf value :mode) '(:allow :deny) :test #'eq)
+       (%proper-list-p (getf value :methods))
+       (plusp (length (getf value :methods)))
+       (every #'%require-auth-method-p (getf value :methods))
+       (= (length (getf value :methods))
+          (length (remove-duplicates (getf value :methods) :test #'eq)))))
+
+(defun %normalize-require-auth (value)
+  (cond
+    ((null value) nil)
+    ((%normalized-require-auth-p value)
+     (list :mode (getf value :mode)
+           :methods (copy-list (getf value :methods))))
+    ((not (stringp value))
+     (error 'parameter-error
+            :parameter :require-auth
+            :message "REQUIRE-AUTH must be NIL, a method list string, or a normalized policy."))
+    (t
+     (let ((value-length (length value))
+           (start 0)
+           (methods nil)
+           (negated-p nil))
+       (when (zerop value-length)
+         (%connection-string-parameter-error
+          "require_auth" "REQUIRE_AUTH cannot be empty."))
+       (loop
+         for separator = (position #\, value :start start)
+         for end = (or separator value-length)
+         do (when (= start end)
+              (%connection-string-parameter-error
+               "require_auth"
+               "REQUIRE_AUTH cannot contain empty entries."))
+            (let* ((entry (subseq value start end))
+                   (negated (and (plusp (length entry))
+                                 (char= (char entry 0) #\!)))
+                   (name (if negated (subseq entry 1) entry))
+                   (method (second
+                            (assoc name *require-auth-method-values*
+                                   :test #'string-equal))))
+              (unless (and (plusp (length name)) method)
+                (%connection-string-parameter-error
+                 "require_auth"
+                 "REQUIRE_AUTH contains an unknown authentication method: ~A."
+                 name))
+              (when (and methods (not (eql negated negated-p)))
+                (%connection-string-parameter-error
+                 "require_auth"
+                 "REQUIRE_AUTH cannot mix positive and negated methods."))
+              (when (member method methods :test #'eq)
+                (%connection-string-parameter-error
+                 "require_auth"
+                 "REQUIRE_AUTH cannot contain duplicate methods."))
+              (setf negated-p negated)
+              (push method methods))
+            (if separator
+                (setf start (1+ separator))
+                (return (list :mode (if negated-p :deny :allow)
+                              :methods (nreverse methods)))))))))
 
 (defun %make-connection-endpoints (&key host hosts hostaddr hostaddrs port ports
                                          host-supplied-p)

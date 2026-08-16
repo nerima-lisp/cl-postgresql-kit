@@ -200,7 +200,9 @@
          (:missing-closing-paren
           "(42")
          (:missing-opening-paren
-          "42)"))
+          "42)")
+         (:too-many-fields
+          "(42,hello,extra)"))
       "composite text codec rejects malformed payload case ~A"
       (label payload)
       (declare (ignore label))

@@ -21,13 +21,19 @@
   (:documentation
    "Wait until TRANSPORT has readable input, returning true on readiness."))
 (defgeneric transport-start-tls (transport &key hostname verify))
+(defgeneric transport-gss-available-p (transport)
+  (:documentation
+   "Return true when TRANSPORT can establish GSS-encrypted transport."))
+(defgeneric transport-start-gss (transport &key hostname service)
+  (:documentation
+   "Start GSS encryption for TRANSPORT after successful server negotiation."))
 (defgeneric transport-channel-binding-data (transport)
   (:documentation
    "Return TLS channel-binding data for TRANSPORT, or NIL when unavailable."))
 
 (defparameter *socket-tls-option-keys*
   '(:alpn-protocols :certificate :key :password :cipher-list :method
-    :verify-location))
+    :verify-location :min-proto-version))
 
 (defun %transport-proper-list-p (value)
   (and (listp value)
@@ -69,6 +75,26 @@
           (t
            (normalize-location value)))))
 
+(defun %normalize-tls-min-proto-version (value)
+  (cond ((null value) nil)
+        ((member value '(:tlsv1 :tlsv1-1 :tlsv1-2 :tlsv1-3) :test #'eq)
+         value)
+        ((stringp value)
+         (cond ((string-equal value "TLSv1") :tlsv1)
+               ((string-equal value "TLSv1.1") :tlsv1-1)
+               ((string-equal value "TLSv1.2") :tlsv1-2)
+               ((string-equal value "TLSv1.3") :tlsv1-3)
+               (t
+                (error 'parameter-error
+                       :parameter value
+                       :message
+                       "TLS min-proto-version must be TLSv1, TLSv1.1, TLSv1.2, or TLSv1.3."))))
+        (t
+         (error 'parameter-error
+                :parameter value
+                :message
+                "TLS min-proto-version must be a TLS version string or keyword."))))
+
 (defun %normalize-tls-option-value (key value)
   (case key
     (:alpn-protocols
@@ -90,6 +116,8 @@
      value)
     (:verify-location
      (%normalize-tls-verify-location value))
+    (:min-proto-version
+     (%normalize-tls-min-proto-version value))
     (:method value)))
 
 (defun %normalize-tls-options (value)
@@ -157,6 +185,16 @@ is used by the optional TLS system to create a connection-local SSL context."
   (declare (ignore transport hostname verify))
   (error 'unsupported-feature :feature :tls
          :message "TLS support is available through the optional cl-postgresql-kit/tls system"))
+
+(defmethod transport-gss-available-p ((transport transport))
+  (declare (ignore transport))
+  nil)
+
+(defmethod transport-start-gss ((transport transport) &key hostname service)
+  (declare (ignore transport hostname service))
+  (error 'unsupported-feature
+         :feature :gss-encryption
+         :message "GSS encryption requires a transport integration that implements the GSS exchange and message protection."))
 
 (defmethod transport-channel-binding-data ((transport transport))
   (declare (ignore transport))

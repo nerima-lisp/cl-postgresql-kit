@@ -1,6 +1,6 @@
 (in-package #:cl-postgresql-kit)
 
-(defun %parse-composite-text (string)
+(defun %parse-composite-text (string &optional maximum-items)
   (let ((string (%type-trim string)))
     (when (or (< (length string) 2)
               (not (char= (char string 0) #\())
@@ -11,7 +11,8 @@
       (if (string= body "")
           #()
           (coerce
-           (loop for token in (%split-type-delimited body #\, :type-decoder)
+           (loop for token in (%split-type-delimited
+                                body #\, :type-decoder maximum-items)
                  collect (multiple-value-bind (value quoted-p)
                              (%unquote-type-token token :null-as-sql-null t)
                            (declare (ignore quoted-p))
@@ -53,8 +54,18 @@
     (%type-encoded-text payload :composite)))
 
 (defun %decode-composite-text (registry field-oids field-names octets)
-  (let* ((raw-fields (%parse-composite-text (%type-encoded-text octets :composite)))
-         (count (length field-oids)))
+  (let* ((count (length field-oids))
+         (raw-fields
+           (progn
+             (when (> count *maximum-array-elements*)
+               (error 'protocol-error
+                      :message "PostgreSQL composite type definition exceeds the configured field limit"
+                      :context :composite
+                      :expected *maximum-array-elements*
+                      :actual count))
+             (%parse-composite-text
+              (%type-encoded-text octets :composite)
+              count))))
     (unless (= (length raw-fields) count)
       (error 'protocol-error :message "PostgreSQL composite field count does not match its type definition"
              :context :composite :expected count :actual (length raw-fields)))

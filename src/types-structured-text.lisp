@@ -91,11 +91,12 @@
                               (incf position))))
                (and null-as-sql-null (string= string "NULL")))))))))
 
-(defun %split-type-delimited (string delimiter context)
+(defun %split-type-delimited (string delimiter context &optional maximum-items)
   (let ((start 0)
         (quoted-p nil)
         (escaped-p nil)
-        (result '()))
+        (result '())
+        (item-count 0))
     (loop for position below (length string)
           for character = (char string position)
           do (cond (escaped-p
@@ -105,12 +106,25 @@
                    ((char= character #\")
                     (setf quoted-p (not quoted-p)))
                    ((and (not quoted-p) (char= character delimiter))
+                    (when (and maximum-items (>= item-count maximum-items))
+                      (error 'protocol-error
+                             :message "PostgreSQL type-delimited input exceeds its configured item limit"
+                             :context context
+                             :expected maximum-items
+                             :actual (1+ item-count)))
                     (push (subseq string start position) result)
+                    (incf item-count)
                     (setf start (1+ position)))))
     (when (or quoted-p escaped-p)
       (error 'protocol-error
              :message "PostgreSQL composite/range token is unterminated"
              :context context))
+    (when (and maximum-items (>= item-count maximum-items))
+      (error 'protocol-error
+             :message "PostgreSQL type-delimited input exceeds its configured item limit"
+             :context context
+             :expected maximum-items
+             :actual (1+ item-count)))
     (nreverse (cons (subseq string start) result))))
 
 (defun %type-text-needs-quote-p (string)

@@ -36,16 +36,24 @@
         (connection-backend-secret-key connection) nil
         (connection-open connection) nil
         (connection-state connection) :connecting
-        (connection-tls-established-p connection) nil))
+        (connection-tls-established-p connection) nil
+        (connection-gss-established-p connection) nil))
 
 (defun %connect-attempt (connection request-ssl-p)
   (setf (connection-open connection) nil
         (connection-state connection) :connecting
-        (connection-tls-established-p connection) nil)
+        (connection-tls-established-p connection) nil
+        (connection-gss-established-p connection) nil)
   (transport-open (connection-transport connection))
-  (let ((ssl-server-rejected-p nil)
+  (let ((gss-result (when (%connection-gss-mode-requests-p connection)
+                      (%gss-request connection)))
+        (ssl-server-rejected-p nil)
         (authentication-started-p nil))
-    (when request-ssl-p
+    (when (and (not (eq gss-result :accepted))
+               (%connection-direct-tls-p connection))
+      (%start-tls connection))
+    (when (and request-ssl-p
+               (not (eq gss-result :accepted)))
       (setf ssl-server-rejected-p
             (eq (%ssl-request connection) :rejected)))
     (transport-write-all (connection-transport connection)
@@ -123,7 +131,8 @@
     (error 'connection-error :message "A PostgreSQL user is required."))
   (%clear-connection-session-state connection)
   (setf (connection-state connection) :connecting
-        (connection-tls-established-p connection) nil)
+        (connection-tls-established-p connection) nil
+        (connection-gss-established-p connection) nil)
   (let ((last-transport-condition nil)
         (preferred-endpoint-index nil))
     (loop for index in (%connection-candidate-indices connection)

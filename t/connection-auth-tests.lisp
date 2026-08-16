@@ -48,7 +48,24 @@
         connection
         '(:type :gss :data #()))))))
 
-(deftest cleartext-authentication-requires-verified-tls
+(deftest kerberos-v5-authentication-uses-gss-token-provider
+  (let ((calls nil))
+    (with-test-connection
+        (connection
+         (ready-memory-connection
+          :gss-token-provider
+          (lambda (ignored-connection type data)
+            (declare (ignore ignored-connection))
+            (push (list type data) calls)
+            (octets 11 12))))
+      (cl-postgresql-kit::%handle-authentication
+       connection
+       '(:type :kerberos-v5 :data #()))
+      (is (equalp '((:kerberos-v5 #())) calls))
+      (is (equalp (encode-gss-response (octets 11 12))
+                  (memory-transport-output (connection-transport connection)))))))
+
+(deftest cleartext-authentication-requires-encrypted-tls
   (with-test-connection
       (connection (ready-memory-connection :password "secret"))
     (assert-signals 'authentication-error
@@ -131,7 +148,7 @@
   (with-test-connection
       (connection (ready-memory-connection
                    :password "secret"
-                   :ssl-mode :verify-full))
+                   :ssl-mode :require))
     (setf (connection-tls-established-p connection) t)
     (cl-postgresql-kit::%authenticate-cleartext connection)
     (is (equalp (memory-transport-output (connection-transport connection))
@@ -152,3 +169,43 @@
        (list :type type :salt (and salt (apply #'octets salt))))
       (is (plusp (length (memory-transport-output
                           (connection-transport connection))))))))
+
+(deftest require-authentication-validates-negotiated-method
+  (with-test-connection
+      (connection (ready-memory-connection :require-auth "none"))
+    (cl-postgresql-kit::%handle-authentication connection '(:type :ok)))
+  (with-test-connection
+      (connection (ready-memory-connection :require-auth "!none"))
+    (assert-signals 'authentication-error
+                    (lambda ()
+                      (cl-postgresql-kit::%handle-authentication
+                       connection '(:type :ok)))))
+  (with-test-connection
+      (connection (ready-memory-connection
+                   :password "secret"
+                   :require-auth "md5"))
+    (cl-postgresql-kit::%handle-authentication
+     connection '(:type :md5-password :salt #(1 2 3 4)))
+    (cl-postgresql-kit::%handle-authentication connection '(:type :ok)))
+  (with-test-connection
+      (connection (ready-memory-connection
+                   :password "secret"
+                   :require-auth "scram-sha-256"))
+    (assert-signals 'authentication-error
+                    (lambda ()
+                      (cl-postgresql-kit::%handle-authentication
+                       connection
+                       '(:type :md5-password :salt #(1 2 3 4)))))))
+
+(deftest require-authentication-filters-sasl-mechanisms
+  (with-test-connection
+      (connection (ready-memory-connection :require-auth "oauth"))
+    (assert-signals 'authentication-error
+                    (lambda ()
+                      (cl-postgresql-kit::%handle-authentication
+                       connection
+                       '(:type :sasl :mechanisms ("SCRAM-SHA-256"))))))
+  (with-test-connection
+      (connection (ready-memory-connection :require-auth "gss"))
+    (setf (connection-gss-established-p connection) t)
+    (cl-postgresql-kit::%handle-authentication connection '(:type :ok))))

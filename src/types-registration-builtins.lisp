@@ -197,7 +197,7 @@
     (register 1184 "timestamptz" #'%decode-timestamptz #'%encode-timestamptz
               :binary-decoder #'%decode-timestamptz-binary
               :binary-encoder #'%encode-timestamptz-binary)
-    (register 1266 "timetz" #'%decode-utf8 #'%encode-utf8
+    (register 1266 "timetz" #'%decode-timetz #'%encode-timetz
               :binary-decoder #'%decode-timetz-binary
               :binary-encoder #'%encode-timetz-binary)
     (register 1186 "interval" #'%decode-interval #'%encode-interval
@@ -211,6 +211,26 @@
     (register 1700 "numeric" #'%decode-numeric #'%encode-numeric
               :binary-decoder #'%decode-numeric-binary
               :binary-encoder #'%encode-numeric-binary)
+    (dolist (spec '((3904 "int4range" 23)
+                    (3906 "numrange" 1700)
+                    (3908 "tsrange" 1114)
+                    (3910 "tstzrange" 1184)
+                    (3912 "daterange" 1082)))
+      (destructuring-bind (oid name subtype-oid) spec
+        (register-range-type registry
+                             :oid oid
+                             :name name
+                             :subtype-oid subtype-oid)))
+    (dolist (spec '((4451 "int4multirange" 23)
+                    (4532 "nummultirange" 1700)
+                    (4533 "tsmultirange" 1114)
+                    (4534 "tstzmultirange" 1184)
+                    (4535 "datemultirange" 1082)))
+      (destructuring-bind (oid name subtype-oid) spec
+        (register-multirange-type registry
+                                  :oid oid
+                                  :name name
+                                  :subtype-oid subtype-oid)))
     (dolist (spec '((1000 "bool[]" 16)
                     (1001 "bytea[]" 17)
                     (1002 "char[]" 18)

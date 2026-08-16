@@ -24,18 +24,21 @@
        :password nil
        :cipher-list nil
        :method :default
-       :verify-location :default)
+       :verify-location :default
+       :min-proto-version nil)
       (:alpn-protocols nil :certificate nil :key nil
        :password nil :cipher-list nil :method :default
-       :verify-location :default))
-     ((:alpn-protocols ("postgres")
+       :verify-location :default :min-proto-version nil))
+     (((:alpn-protocols ("postgres")
        :certificate #P"/tmp/cert.pem"
        :key #P"/tmp/key.pem"
-       :verify-location (#P"/tmp/ca.pem"))
+       :verify-location (#P"/tmp/ca.pem")
+       :min-proto-version "TLSv1.2")
       (:alpn-protocols ("postgres")
        :certificate "/tmp/cert.pem"
        :key "/tmp/key.pem"
-       :verify-location ("/tmp/ca.pem")))))
+       :verify-location ("/tmp/ca.pem")
+       :min-proto-version :tlsv1-2)))))
   (is-funcall-results
    #'cl-postgresql-kit::%normalize-tls-verify-location
    '((:default :default)
@@ -54,6 +57,7 @@
      (:alpn-protocols ("ok" 42))
      (:verify-location (42))
      (:password 42)
+     (:min-proto-version "SSLv3")
      (:method :x :method :y))
    #'cl-postgresql-kit::%normalize-tls-options))
 
@@ -77,6 +81,17 @@
                (cl-postgresql-kit::socket-transport-host transport)))
     (is (= 5432 (cl-postgresql-kit::socket-transport-port transport)))
     (is (= 30 (cl-postgresql-kit::socket-transport-timeout transport)))))
+
+(deftest socket-transport-unix-socket-path
+  (let ((transport (make-socket-transport
+                     :host "/var/run/postgresql"
+                     :port 5433)))
+    (is (cl-postgresql-kit::%socket-transport-local-p transport))
+    (is (equal "/var/run/postgresql/.s.PGSQL.5433"
+               (cl-postgresql-kit::%socket-transport-local-path transport))))
+  (let ((transport (make-socket-transport :host "/" :port 5432)))
+    (is (equal "/.s.PGSQL.5432"
+               (cl-postgresql-kit::%socket-transport-local-path transport)))))
 
 (deftest transport-octet-validation
   (is (cl-postgresql-kit::%transport-octet-vector-p #(0 1 255)))

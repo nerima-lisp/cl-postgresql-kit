@@ -134,6 +134,19 @@
       (let ((decoded (decode-value registry 8011 (builder-octets builder)
                                    :format 1)))
         (is (= 1 (length (postgres-multirange-ranges decoded))))))
+    (let ((cl-postgresql-kit::*maximum-array-elements* 1))
+      (assert-signals 'protocol-error
+                      (lambda ()
+                        (decode-value registry 8011
+                                      (octets 0 0 0 2)
+                                      :format 1)))
+      (assert-signals 'protocol-error
+                      (lambda ()
+                        (decode-value
+                         registry
+                         8011
+                         (cl-codec-kit:string-to-octets
+                          "{[1,10),[20,30]}" :encoding :utf-8)))))
     (it-signals-each 'protocol-error
         ((:negative-range-count
           (octets #xff #xff #xff #xff))

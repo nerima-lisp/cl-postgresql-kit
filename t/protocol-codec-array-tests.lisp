@@ -119,6 +119,29 @@
                 "{\"one\",\"two\"}" :encoding :utf-8)
                (encode-value registry array-oid array))))))))
 
+(deftest array-text-resource-limits
+  (let ((registry (make-type-registry)))
+    (let ((cl-postgresql-kit::*maximum-array-elements* 2))
+      (assert-signals 'protocol-error
+                      (lambda ()
+                        (decode-value
+                         registry 1007
+                         (cl-codec-kit:string-to-octets
+                          "{1,2,3}" :encoding :utf-8)))))
+    (let ((cl-postgresql-kit::*maximum-array-dimensions* 2))
+      (assert-signals 'protocol-error
+                      (lambda ()
+                        (decode-value
+                         registry 1007
+                         (cl-codec-kit:string-to-octets
+                          "{{{1}}}" :encoding :utf-8)))))))
+
+(deftest built-in-range-registration-completeness
+  (let ((registry (make-type-registry)))
+    (dolist (oid '(3904 3906 3908 3910 3912
+                   4451 4532 4533 4534 4535))
+      (is (find-type-codec registry oid)))))
+
 (deftest array-codec-validates-shape-and-wire-boundaries
   (let ((registry (make-type-registry)))
     (let* ((array

@@ -1,5 +1,8 @@
 (in-package #:cl-postgresql-kit)
 
+(defparameter *maximum-type-registry-catalog-rows* 100000
+  "Maximum number of rows accepted from one pg_catalog type query.")
+
 (defun %type-registry-catalog-error (message &rest arguments)
   (error 'protocol-error
          :message (apply #'format nil message arguments)
@@ -38,7 +41,9 @@
     value))
 
 (defun %type-registry-catalog-rows (connection sql column-count)
-  (let ((result (query connection sql)))
+  (let ((result
+          (query connection sql
+                :max-result-rows *maximum-type-registry-catalog-rows*)))
     (unless (= column-count (length (result-columns result)))
       (%type-registry-catalog-error
        "The pg_catalog query returned ~D columns; expected ~D."

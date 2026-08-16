@@ -27,12 +27,7 @@ client symbols:
 
 ```lisp
 (let ((connection
-        (cl-postgresql-kit:make-connection
-         :host (or (uiop:getenv "PGHOST") "127.0.0.1")
-         :port (parse-integer (or (uiop:getenv "PGPORT") "5432"))
-         :database (uiop:getenv "PGDATABASE")
-         :user (uiop:getenv "PGUSER")
-         :password (uiop:getenv "PGPASSWORD"))))
+        (cl-postgresql-kit:make-connection-from-string "")))
   (unwind-protect
        (progn
          (cl-postgresql-kit:connect connection)
@@ -46,6 +41,19 @@ client symbols:
 `cl-postgresql-kit:make-connection-from-string` and
 `cl-postgresql-kit:make-connection-from-uri` for PostgreSQL connection
 strings and URIs.
+
+`make-connection-from-string ""` applies the standard connection defaults from
+`PG*` environment variables, `PGSERVICE`/`PGSERVICEFILE`, and
+`PGPASSFILE`/`.pgpass`. The precedence is environment, then service profile,
+then explicit connection-string properties; a passfile supplies a password
+only when one was not supplied explicitly. The direct `make-connection` API is
+deliberately explicit and does not load those defaults.
+
+Connection descriptions cover endpoint selection (`host`, `hostaddr`, and
+`port`), authentication (`user`, `password`, `passfile`, and `database`), TLS
+and security negotiation, startup parameters (`client_encoding`, `options`,
+and `replication`), and session selection (`target_session_attrs` and
+`load_balance_hosts`). Unknown parameters signal `unsupported-feature`.
 
 For failover or read-scaling, pass multiple hosts with `:hosts` (and matching
 `:hostaddrs` or `:ports` when needed). Use `:target-session-attrs` to select a
@@ -90,11 +98,14 @@ Options accepted by the optional `cl+ssl` integration can be supplied through
                 :key "client.key"
                 :password (uiop:getenv "PGSSLKEYPASSWORD")
                 :alpn-protocols ("postgresql")
+                :min-proto-version :tlsv1-2
                 :verify-location "root.crt"))
 ```
 
 Supported keys are `:certificate`, `:key`, `:password`, `:alpn-protocols`,
-`:cipher-list`, `:method`, and `:verify-location`. The last accepts a
+`:cipher-list`, `:method`, `:min-proto-version`, and `:verify-location`. The
+minimum protocol key accepts `:tlsv1`, `:tlsv1-1`, `:tlsv1-2`, or `:tlsv1-3`;
+the connection-string spelling is `ssl_min_protocol_version`. The last accepts a
 pathname/string, `:default`, `:default-file`, `:default-dir`, or a list of
 pathnames. The connection-string form `sslrootcert=system` selects `:default`
 and implies `sslmode=verify-full` when no sslmode is supplied.

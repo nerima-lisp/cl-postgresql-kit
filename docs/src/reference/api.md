@@ -10,16 +10,27 @@ definition remains the authoritative list of exported symbols.
 
 - `make-connection` creates a connection object from host, port, database,
   user, password, timeout, TLS, and transport options.
+- `make-connection-from-string ""` additionally applies `PG*` environment
+  defaults, `PGSERVICE`/`PGSERVICEFILE`, and `PGPASSFILE`/`.pgpass`; direct
+  `make-connection` remains an explicit builder.
 - `parse-connection-string` and `parse-connection-uri` parse PostgreSQL
   connection descriptions.
+- Connection descriptions support endpoint, authentication, TLS/security,
+  startup-parameter, and session-selection options. Environment values are
+  overridden by a service profile and then by explicit description values;
+  passfiles fill in only an absent password.
 - `:hosts`, `:hostaddrs`, and `:ports` can describe multiple candidate
   endpoints. `:target-session-attrs` filters candidates by their session role;
   `:load-balance-hosts :random` shuffles the candidate order for each connect.
 - `:channel-binding` controls SCRAM channel binding with `:disable`, `:prefer`
   (default), or `:require`.
+- `:ssl-negotiation` selects PostgreSQL or direct TLS negotiation;
+  `:gssenc-mode`, `:gss-service-name`, and `:require-auth` control GSS
+  encryption and authentication policy.
 - `:tls-options` passes per-stream `cl+ssl` options such as `:certificate`,
   `:key`, `:password`, `:alpn-protocols`, `:cipher-list`, and `:method`; its
-  `:verify-location` option configures a connection-local CA context.
+  `:min-proto-version` limits the TLS protocol floor and `:verify-location`
+  configures a connection-local CA context.
 - `make-connection-from-string` and `make-connection-from-uri` construct a
   connection from those descriptions.
 - `connect` opens the transport and performs startup and authentication.

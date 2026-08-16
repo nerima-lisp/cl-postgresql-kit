@@ -1,9 +1,44 @@
 (in-package #:cl-postgresql-kit/test)
 
+(defmacro with-test-connection-file ((var contents) &body body)
+  `(let ((,var (merge-pathnames
+                (format nil "cl-postgresql-kit-~A.conf" (gensym))
+                (uiop:temporary-directory))))
+     (unwind-protect
+          (progn
+            (with-open-file (stream ,var
+                                    :direction :output
+                                    :if-exists :supersede
+                                    :if-does-not-exist :create)
+              (write-string ,contents stream))
+            ,@body)
+       (when (probe-file ,var)
+         (delete-file ,var)))))
+
+(defun call-with-test-environment-variable (name value thunk)
+  #+sbcl
+  (let ((old-value (uiop:getenv name)))
+    (unwind-protect
+         (progn
+           (require :sb-posix)
+           (uiop:symbol-call :sb-posix :setenv name value 1)
+           (funcall thunk))
+      (if old-value
+          (uiop:symbol-call :sb-posix :setenv name old-value 1)
+          (uiop:symbol-call :sb-posix :unsetenv name))))
+  #-sbcl
+  (declare (ignore name value))
+  #-sbcl
+  (funcall thunk))
+
+(defmacro with-test-environment-variable ((name value) &body body)
+  `(call-with-test-environment-variable ,name ,value
+                                        (lambda () ,@body)))
+
 (deftest connection-string-parsing
   (is-option-values
    (parse-connection-string
-    "host=first.example host=database.example port=5433 user=alice password='s e\\'cret' dbname=app sslmode=verify-ca connect_timeout=5 application_name='my app' options='-c statement_timeout=1000' replication=database")
+    "host=first.example host=database.example port=5433 user=alice password='s e\\'cret' dbname=app sslmode=verify-ca connect_timeout=5 application_name='my app' options='-c statement_timeout=1000' replication=database require_auth='scram-sha-256,oauth'")
    (:host "database.example" string=)
    (:port 5433 =)
    (:user "alice" string=)
@@ -17,8 +52,30 @@
       ("replication" . "database"))
     equal))
   (is-option-values
-   (parse-connection-string "load_balance_hosts=random")
-   (:load-balance-hosts :random eq))
+   (parse-connection-string "require_auth='scram-sha-256,oauth'")
+   (:require-auth
+    '(:mode :allow :methods (:scram-sha-256 :oauth))
+    equal))
+    (is-option-values
+     (parse-connection-string "load_balance_hosts=random")
+     (:load-balance-hosts :random eq))
+  #+sbcl
+  (with-test-environment-variable ("PGSERVICE" "")
+    (with-test-environment-variable ("PGHOST" "env.example")
+      (with-test-environment-variable ("PGPORT" "5444")
+        (with-test-environment-variable ("PGDATABASE" "env-db")
+          (with-test-environment-variable ("PGUSER" "env-user")
+            (with-test-environment-variable ("PGAPPNAME" "env-app")
+              (with-test-environment-variable
+                  ("PGSSLMINPROTOCOLVERSION" "TLSv1.2")
+                (is-option-values
+                 (parse-connection-string "")
+                 (:host "env.example" string=)
+                 (:port 5444 =)
+                 (:database "env-db" string=)
+                 (:user "env-user" string=)
+                 (:application-name "env-app" string=)
+                 (:tls-options '(:min-proto-version :tlsv1-2) equal)))))))))
   (let ((transport (make-memory-transport)))
     (is-connection-values
      (make-connection-from-string
@@ -63,6 +120,14 @@
    (connection-user "alice" string=)
    (connection-password "override" string=)
    (connection-ssl-mode :disable eq)))
+  (let ((default-host #+win32 "127.0.0.1" #-win32 "/tmp"))
+    (is-option-values
+     (parse-connection-uri "postgresql:///app")
+     (:host default-host string=)
+     (:database "app" string=))
+    (is-option-values
+     (parse-connection-uri "postgresql://%2Ftmp/app")
+     (:host "/tmp" string=)))
 
 (deftest connection-parsing-validation
   (let ((options
@@ -71,6 +136,9 @@
     (is (eq :require (getf options :channel-binding))))
   (is (eq :prefer
           (connection-channel-binding (make-connection))))
+  (is (equal '(:mode :deny :methods (:password :none))
+             (connection-require-auth
+              (make-connection :require-auth "!password,!none"))))
   (it-signals-each 'parameter-error
       ((:invalid-channel-binding)
        (:invalid-port)
@@ -108,6 +176,11 @@
     "hostaddr=,127.0.0.1"
     "connect_timeout=-1"
     "connect_timeout=abc"
+    "require_auth="
+    "require_auth=unknown"
+    "require_auth=!"
+    "require_auth=scram-sha-256,!md5"
+    "require_auth=md5,md5"
     "sslmode=invalid"
     "target_session_attrs=invalid"
     "load_balance_hosts=invalid"
@@ -126,11 +199,63 @@
     "postgresql://localhost:65536/app"
     "mysql://localhost/db")
    (parse-connection-string value))
-  (let ((condition
-          (with-signaled-condition (condition 'unsupported-feature)
-            (parse-connection-string "service=database"))))
-    (is (string= "service" (unsupported-feature-name condition)))
-    (is (search "service" (princ-to-string condition))))
+  #+sbcl
+  (with-test-connection-file
+      (service-file
+       (format nil
+               "[base]~%host=db.example~%port=5433~%user=alice~%dbname=app~%password=from-service~%[app]~%service=base~%application_name=from-profile~%"))
+    (with-test-environment-variable ("PGSERVICEFILE" (namestring service-file))
+      (with-test-environment-variable ("PGSERVICE" "app")
+        (is-option-values
+         (parse-connection-string "service=app host=override")
+         (:host "override" string=)
+         (:port 5433 =)
+         (:user "alice" string=)
+         (:database "app" string=)
+         (:password "from-service" string=)
+         (:application-name "from-profile" string=))
+        (is-option-values
+         (parse-connection-string "host=override")
+         (:host "override" string=)
+         (:port 5433 =)
+         (:user "alice" string=)
+         (:database "app" string=)
+         (:password "from-service" string=)
+         (:application-name "from-profile" string=)))))
+  #+sbcl
+  (with-test-connection-file
+      (passfile
+       (format nil "db.example:5433:app:alice:s3cr\\:t~%"))
+    (is-option-values
+     (parse-connection-string
+      (format nil "host=db.example port=5433 user=alice dbname=app passfile=~A"
+              (namestring passfile)))
+     (:password "s3cr:t" string=)
+     (:passfile (namestring passfile) string=))
+    (is-option-values
+     (parse-connection-string
+      (format nil "host=db.example port=5433 user=alice dbname=app password=explicit passfile=~A"
+              (namestring passfile)))
+     (:password "explicit" string=))
+    (is-connection-values
+     (make-connection-from-string
+      (format nil "host=db.example port=5433 user=alice dbname=app passfile=~A"
+              (namestring passfile)))
+     (connection-password "s3cr:t" string=)
+     (connection-passfile (namestring passfile) string=))
+    (let ((connection
+            (make-connection :host "db.example"
+                             :port 5433
+                             :user "alice"
+                             :database "app"
+                             :passfile passfile)))
+      (is (string= "s3cr:t" (connection-password connection)))
+      (is (equal passfile (connection-passfile connection)))
+      (disconnect connection)))
+  (let ((default-host #+win32 "127.0.0.1" #-win32 "/tmp"))
+    (is-option-values
+     (parse-connection-string "host=")
+     (:host default-host string=)))
   (is-option-values
    (parse-connection-uri
     "postgresql://first.example:5433,second.example/app")
@@ -150,11 +275,12 @@
 (deftest tls-option-plumbing
   (let ((options
           (parse-connection-string
-           "sslcert=client.crt sslkey=client.key sslpassword='secret' sslrootcert=ca.crt")))
+           "sslcert=client.crt sslkey=client.key sslpassword='secret' sslrootcert=ca.crt ssl_min_protocol_version=TLSv1.2")))
     (is (equal '(:certificate "client.crt"
                  :key "client.key"
                  :password "secret"
-                 :verify-location "ca.crt")
+                 :verify-location "ca.crt"
+                 :min-proto-version :tlsv1-2)
                (getf options :tls-options))))
   (let ((options (parse-connection-string "sslrootcert=system")))
     (is (eq :verify-full (getf options :ssl-mode)))

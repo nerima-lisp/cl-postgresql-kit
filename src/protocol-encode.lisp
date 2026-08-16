@@ -274,11 +274,13 @@
     (%protocol-frame #\p builder)))
 
 (defun encode-sasl-initial-response (mechanism initial-response)
-  (let* ((response (%protocol-string-octets initial-response))
+  (let* ((response (and initial-response
+                        (%protocol-string-octets initial-response)))
          (builder (%protocol-builder)))
     (append-cstring builder mechanism)
-    (append-i32 builder (length response))
-    (append-octets builder response)
+    (append-i32 builder (if response (length response) -1))
+    (when response
+      (append-octets builder response))
     (%protocol-frame #\p builder)))
 
 (defun encode-sasl-response (response)

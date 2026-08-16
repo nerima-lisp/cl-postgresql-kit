@@ -54,3 +54,43 @@
          (encoded (encode-value registry oid decoded)))
     (is (funcall predicate decoded))
     (is (equalp wire encoded))))
+
+(cl-weave:it-each
+    (("12:34:56.123456+09" "12:34:56.123456+09" -32400)
+     ("04:05:06-08:30" "04:05:06-08:30" 30600)
+     ("040506+0730" "04:05:06+07:30" -27000)
+     ("24:00:00-15:59:59" "24:00:00-15:59:59" 57599)
+     ("00:00:00Z" "00:00:00+00" 0))
+  "timetz text codecs parse and canonicalize PostgreSQL offsets"
+  (value canonical timezone-seconds)
+  (let* ((registry (make-type-registry))
+         (wire (cl-codec-kit:string-to-octets value :encoding :utf-8))
+         (decoded (decode-value registry 1266 wire))
+         (encoded (encode-value registry 1266 decoded)))
+    (is (timetz-value-p decoded))
+    (is (= timezone-seconds
+           (postgres-time-with-time-zone-timezone-seconds
+            (timetz-value-value decoded))))
+    (is (equal canonical
+               (cl-postgresql-kit::%decode-utf8 encoded)))))
+
+(it-signals-each 'protocol-error
+    (("12:34:56")
+     ("25:00:00+00")
+     ("12:34:56.1234567+00")
+     ("12:34:56+16:00")
+     ("12:34:56+00:60"))
+  "invalid timetz text payloads signal protocol-error"
+  (value)
+  (let ((registry (make-type-registry)))
+    (decode-value registry 1266
+                  (cl-codec-kit:string-to-octets value :encoding :utf-8))))
+
+(it-signals-each 'parameter-error
+    (("12:34:56")
+     ("12:34:56+16:00")
+     (42))
+  "invalid timetz text parameters signal parameter-error"
+  (value)
+  (let ((registry (make-type-registry)))
+    (encode-value registry 1266 value)))

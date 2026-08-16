@@ -8,11 +8,13 @@
                                       (max-notifications 10000)
                                       query-timeout
                                       metric-registry
-                                      (ssl-mode :disable))
+                                      (ssl-mode :disable)
+                                      require-auth)
   (let ((transport (make-memory-transport :input input :on-write on-write)))
     (transport-open transport)
     (let ((connection (make-connection :transport transport
                                        :ssl-mode ssl-mode
+                                       :require-auth require-auth
                                        :password password
                                        :oauth-token-provider
                                        oauth-token-provider

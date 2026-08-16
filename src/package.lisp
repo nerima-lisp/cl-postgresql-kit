@@ -246,6 +246,8 @@
    #:transport-flush
    #:transport-alive-p
    #:transport-start-tls
+   #:transport-gss-available-p
+   #:transport-start-gss
    #:transport-channel-binding-data
    #:transport-opened-p
    #:socket-transport
@@ -356,6 +358,7 @@
    #:postgres-inet-netmask
    #:postgres-inet-cidr-p
    #:*maximum-numeric-digits*
+   #:*maximum-type-registry-catalog-rows*
    #:postgres-array
    #:postgres-array-p
    #:make-postgres-array
@@ -405,15 +408,21 @@
    #:connection-protocol-version
    #:connection-negotiated-protocol-version
    #:connection-password
+   #:connection-passfile
    #:connection-oauth-token-provider
    #:connection-gss-token-provider
    #:connection-sspi-token-provider
    #:connection-ssl-mode
+   #:connection-ssl-negotiation
    #:connection-tls-options
+   #:connection-gssenc-mode
+   #:connection-gss-service-name
    #:connection-channel-binding
+   #:connection-require-auth
    #:connection-target-session-attrs
    #:connection-load-balance-hosts
    #:connection-tls-established-p
+   #:connection-gss-established-p
    #:connection-transport
    #:connection-parameters
    #:connection-type-registry

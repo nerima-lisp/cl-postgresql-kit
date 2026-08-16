@@ -23,6 +23,8 @@
                (parse-authentication (authentication 0))))
     (is (equal '(:type :cleartext-password)
                (parse-authentication (authentication 3))))
+    (is (equal '(:type :kerberos-v5 :data #())
+               (parse-authentication (authentication 2))))
     (let ((message (parse-authentication
                     (authentication 5 (octets 1 2 3 4)))))
       (is (equal '(:type :md5-password) (subseq message 0 2)))
@@ -237,3 +239,8 @@
           (backend-message-kind (char-code #\v))))
   (is (equalp (make-frame #\p (octets 1 2 3))
               (encode-gss-response (octets 1 2 3)))))
+
+(deftest sasl-initial-response-uses-null-length
+  (let ((wire (encode-sasl-initial-response "SCRAM-SHA-256" nil)))
+    (is (equalp (octets #xff #xff #xff #xff)
+                (subseq wire (- (length wire) 4))))))

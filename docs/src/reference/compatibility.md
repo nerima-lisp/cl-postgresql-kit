@@ -18,6 +18,26 @@ For built-in `bytea` text decoding, the client accepts PostgreSQL's hex form
 on escape-form `bytea` text results should switch the query or server setting
 to hex output before relying on the built-in codec.
 
+## Connection descriptions and defaults
+
+Connection strings and URIs cover endpoint selection (`host`, `hostaddr`, and
+`port`), authentication (`user`, `password`, `passfile`, and `database`), TLS
+(`sslmode`, `sslcert`, `sslkey`, `sslpassword`, `sslrootcert`, and
+`ssl_min_protocol_version`), security negotiation (`sslnegotiation`,
+`gssencmode`, `krbsrvname`, `channel_binding`, and `require_auth`), startup
+parameters (`application_name`, `client_encoding`, `options`, and
+`replication`), and session selection (`target_session_attrs` and
+`load_balance_hosts`). Unknown parameters signal `unsupported-feature` rather
+than being silently ignored.
+
+An empty connection string applies `PG*` environment defaults, then a
+`PGSERVICE` profile from `PGSERVICEFILE`, then explicit connection-string
+properties. `PGPASSFILE` or the default passfile can supply a password only
+when no explicit password was provided. On Unix-like systems the default host
+is the PostgreSQL Unix-socket directory; on Windows it is the loopback host.
+`hostaddr` can be used to separate the address used for transport from the
+hostname used for TLS verification.
+
 ## Authentication
 
 The connection startup path supports these authentication mechanisms when the
@@ -57,13 +77,28 @@ The native socket transport passes the per-stream `cl+ssl` options `:certificate
 `cl+ssl` context from a pathname, a CL+SSL default location keyword, or a list
 of pathnames. The libpq value `sslrootcert=system` maps to the CL+SSL default
 location and implies `:verify-full` when `sslmode` is omitted.
-The native socket transport does not expose TLS channel-binding bytes, so applications
-that require SCRAM-SHA-256-PLUS must provide a transport implementation that
+The TLS minimum version can be set with `:min-proto-version` or the
+`ssl_min_protocol_version` connection parameter, using TLS 1.0 through TLS
+1.3. With `sslnegotiation=direct`, the connection requires an encrypting TLS
+mode and advertises PostgreSQL's direct-TLS ALPN protocol. The native socket
+transport does not expose TLS channel-binding bytes, so applications that
+require SCRAM-SHA-256-PLUS must provide a transport implementation that
 implements `transport-channel-binding-data`.
 
 `make-connection` defaults to `:disable` because TLS is an optional system
 dependency. Production deployments that require encryption should choose
 `:verify-full` (or `:verify-ca`) explicitly.
+
+## Operations and typed values
+
+The public operation surface includes simple and parameterized queries,
+prepared statements, named cursors, transactions and savepoints, pipelines,
+notifications, cancellation, pooling, text and binary COPY, large objects,
+physical replication, logical replication and `pgoutput` decoding, and base
+backup primitives. The type registry includes built-in scalar, temporal,
+JSON, UUID, bit-string, network, array, range, composite, enum, domain, and
+SQL `NULL` handling. The API reference describes the operation-specific
+limits and transport requirements.
 
 ## Transports and platforms
 
