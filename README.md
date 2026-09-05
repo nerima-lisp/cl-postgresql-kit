@@ -3,12 +3,12 @@
 [![Documentation](https://img.shields.io/badge/docs-nerima--lisp.github.io-teal)](https://nerima-lisp.github.io/cl-postgresql-kit/)
 
 `cl-postgresql-kit` is a PostgreSQL wire-protocol client for Common Lisp. It
-follows the conventions of the nerima-lisp package family and provides
-connections, typed results, pooling, COPY, and replication primitives.
+provides connections, typed results, pooling, COPY, and replication
+primitives.
 
 The [documentation site](https://nerima-lisp.github.io/cl-postgresql-kit/)
-contains the complete getting-started guide, API reference, compatibility
-notes, and development instructions.
+contains the getting-started guide, API reference, compatibility notes, and
+development instructions.
 
 ## Quick Start
 
@@ -133,7 +133,7 @@ and removes a temporary cache directory for the wrapped command.
 
 ## Contributing
 
-Please keep public API changes, protocol behavior, and documentation in sync.
+Keep public API changes, protocol behavior, and documentation in sync.
 Add or update focused tests when changing protocol or state-machine behavior.
 
 ## Support

@@ -1,8 +1,7 @@
 # Compatibility
 
-This page describes the protocol and transport boundary covered by the
-current implementation. It is not a PostgreSQL server-version support
-matrix.
+The current implementation covers the protocol and transport boundary below.
+This page is not a PostgreSQL server-version support matrix.
 
 ## Wire protocol
 
@@ -10,8 +9,8 @@ The core client supports PostgreSQL wire-protocol versions 3.0 and 3.2.
 `make-connection` defaults to 3.0; pass `:protocol-version` to select the
 other supported startup version. When a server sends
 `NegotiateProtocolVersion`, the connection records the negotiated version and
-uses it for subsequent protocol parsing. This describes the wire-protocol
-boundary, not support for every PostgreSQL server release or extension.
+uses it for subsequent protocol parsing. This is a wire-protocol boundary, not
+support for every PostgreSQL server release or extension.
 
 For built-in `bytea` text decoding, the client accepts PostgreSQL's hex form
 (`\\x...`) and rejects the legacy escape form. Applications that still depend
@@ -97,8 +96,8 @@ require SCRAM-SHA-256-PLUS must provide a transport implementation that
 implements `transport-channel-binding-data`.
 
 `make-connection` defaults to `:disable` because TLS is an optional system
-dependency. Production deployments that require encryption should choose
-`:verify-full` (or `:verify-ca`) explicitly.
+dependency. To require encryption, choose `:require`, `:verify-full`, or
+`:verify-ca` explicitly.
 
 ## Operations and typed values
 

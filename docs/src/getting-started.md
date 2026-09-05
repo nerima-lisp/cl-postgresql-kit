@@ -80,8 +80,8 @@ The `:ssl-mode` option accepts `:disable`, `:allow`, `:prefer`, `:require`,
 ```
 
 The core `make-connection` default is `:ssl-mode :disable` because TLS is an
-optional system dependency. For production connections that require encryption,
-select `:verify-full` (or `:verify-ca`) explicitly.
+optional system dependency. To require encryption, select `:require`,
+`:verify-full`, or `:verify-ca` explicitly.
 
 `:require` requests TLS without certificate verification. `:verify-ca`
 verifies the certificate chain, and `:verify-full` also verifies the host
