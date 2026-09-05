@@ -30,8 +30,8 @@
       (:alpn-protocols nil :certificate nil :key nil
        :password nil :cipher-list nil :method :default
        :verify-location :default :min-proto-version nil
-       :max-proto-version nil)))
-     (((:alpn-protocols ("postgres")
+       :max-proto-version nil))
+     ((:alpn-protocols ("postgres")
        :certificate #P"/tmp/cert.pem"
        :key #P"/tmp/key.pem"
        :verify-location (#P"/tmp/ca.pem")
