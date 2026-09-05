@@ -1,5 +1,3 @@
-;;;; scripts/run-coverage.lisp
-
 (require :asdf)
 (require :sb-cover)
 

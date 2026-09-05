@@ -1,5 +1,5 @@
 {
-  description = "A production-oriented PostgreSQL wire-protocol client for Common Lisp";
+  description = "A PostgreSQL wire-protocol client for Common Lisp";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

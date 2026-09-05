@@ -24,7 +24,6 @@
   split by responsibility: `support.lisp` holds generic assertions,
   `support-wire.lisp` holds protocol/wire builders, and
   `support-fixtures.lisp` holds reusable connection fixtures.
-- `docs/mkdocs.yml` and `docs/src/` contain this documentation site.
 - `run-tests.lisp` is the reproducible local ASDF test entry point; the flake
   exposes the same test boundary as `.#test`.
 

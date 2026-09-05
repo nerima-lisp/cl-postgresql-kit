@@ -1,5 +1,3 @@
-;;;; run-tests.lisp
-
 (require :asdf)
 
 (defun script-directory ()

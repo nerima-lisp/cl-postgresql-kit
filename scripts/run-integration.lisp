@@ -1,5 +1,3 @@
-;;;; scripts/run-integration.lisp
-
 (require :asdf)
 
 (defun %integration-script-directory ()
